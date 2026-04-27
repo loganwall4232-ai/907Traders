@@ -1,0 +1,2022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>907Traders</title>
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+<!-- GSAP -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+<!-- Firebase -->
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, doc, setDoc, getDoc, getDocs, deleteDoc, serverTimestamp, updateDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+import { getAuth, signInWithPopup, GoogleAuthProvider, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged, signOut, updateProfile } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAIZbTmaig0C4Xz4xyZMqIYTK-9OETyxdA",
+  authDomain: "traders-2aff7.firebaseapp.com",
+  projectId: "traders-2aff7",
+  storageBucket: "traders-2aff7.firebasestorage.app",
+  messagingSenderId: "921119097909",
+  appId: "1:921119097909:web:6606ce966ffb3e694c5d7c",
+  measurementId: "G-ZSPJXT0PXH"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+const storage = getStorage(app);
+const provider = new GoogleAuthProvider();
+const ADMIN_EMAIL = "Loganwall4232@gmail.com";
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let currentUser = null;
+let currentPage = 'log';
+let trades = [];
+let messages = [];
+let members = [];
+let unsubTrades = null;
+let unsubMessages = null;
+let unsubMembers = null;
+let logTradeScreenshots = [];
+let editingTradeId = null;
+let tradeFilter = 'ALL';
+let pairFilter = 'ALL';
+let retakeFilter = false;
+let lightboxImages = [];
+let lightboxIndex = 0;
+let replyingToTrade = null;
+let tradePopupData = null;
+
+// Theme
+const DEFAULT_THEME = {
+  bg: '#0a0a0a', topbar: '#0d0d0d', bottombar: '#0d0d0d',
+  cardBg: 'rgba(255,255,255,0.04)', cardBorder: 'rgba(255,255,255,0.08)',
+  textPrimary: '#f0f0f0', textSecondary: '#666', logoText: '#ffffff',
+  profit: '#22c55e', loss: '#ef4444',
+  shadowColor: 'rgba(0,0,0,0.6)', shadowOpacity: '0.6',
+  confluenceReversal: '#a855f7', confluenceConfirmation: '#3b82f6', confluenceContinuation: '#22c55e',
+  chipActiveBg: 'rgba(255,255,255,0.12)', chipActiveText: '#fff',
+  buttonHighlight: '#ffffff',
+  donutWin: '#22c55e', donutLoss: '#ef4444',
+  barWin: '#22c55e', barLoss: '#ef4444',
+  sparkline: '#818cf8', plLine: '#818cf8',
+  statAccent: '#f0f0f0',
+  bgImage: null, bgImageEnabled: false
+};
+
+function loadTheme() {
+  try { return JSON.parse(localStorage.getItem('907t_theme')) || DEFAULT_THEME; }
+  catch { return DEFAULT_THEME; }
+}
+
+function applyTheme(t) {
+  const r = document.documentElement.style;
+  r.setProperty('--bg', t.bg);
+  r.setProperty('--topbar', t.topbar === 'transparent' ? 'transparent' : t.topbar);
+  r.setProperty('--bottombar', t.bottombar === 'transparent' ? 'transparent' : t.bottombar);
+  r.setProperty('--card-bg', t.cardBg);
+  r.setProperty('--card-border', t.cardBorder);
+  r.setProperty('--text-primary', t.textPrimary);
+  r.setProperty('--text-secondary', t.textSecondary);
+  r.setProperty('--logo-text', t.logoText);
+  r.setProperty('--profit', t.profit);
+  r.setProperty('--loss', t.loss);
+  r.setProperty('--shadow-color', t.shadowColor);
+  r.setProperty('--confluence-reversal', t.confluenceReversal);
+  r.setProperty('--confluence-confirmation', t.confluenceConfirmation);
+  r.setProperty('--confluence-continuation', t.confluenceContinuation);
+  r.setProperty('--chip-active-bg', t.chipActiveBg);
+  r.setProperty('--chip-active-text', t.chipActiveText);
+  r.setProperty('--btn-highlight', t.buttonHighlight);
+  r.setProperty('--stat-accent', t.statAccent);
+  if (t.bgImage && t.bgImageEnabled) {
+    document.body.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.7),rgba(0,0,0,0.7)), url(${t.bgImage})`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundAttachment = 'fixed';
+  } else {
+    document.body.style.backgroundImage = 'none';
+  }
+}
+
+let currentTheme = loadTheme();
+applyTheme(currentTheme);
+
+// ─── AUTH FLOW ────────────────────────────────────────────────────────────────
+async function getGroupPassword() {
+  const snap = await getDoc(doc(db, 'config', 'groupPassword'));
+  return snap.exists() ? snap.data().hash : null;
+}
+
+async function hashPassword(pw) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkUserPassword(uid) {
+  const snap = await getDoc(doc(db, 'userAuth', uid));
+  if (!snap.exists()) return false;
+  const stored = snap.data().passwordHash;
+  const current = await getGroupPassword();
+  return stored === current;
+}
+
+async function saveUserPasswordHash(uid, hash) {
+  await setDoc(doc(db, 'userAuth', uid), { passwordHash: hash }, { merge: true });
+}
+
+async function ensureUserProfile(user) {
+  const ref = doc(db, 'users', user.uid);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) {
+    await setDoc(ref, {
+      uid: user.uid, email: user.email,
+      username: user.displayName || user.email.split('@')[0],
+      avatar: user.photoURL || '', role: user.email === ADMIN_EMAIL ? 'admin' : 'member',
+      joinedAt: serverTimestamp(), lastSeen: serverTimestamp(),
+      theme: currentTheme
+    });
+  } else {
+    await updateDoc(ref, { lastSeen: serverTimestamp() });
+    const data = snap.data();
+    if (data.theme) { currentTheme = data.theme; applyTheme(currentTheme); localStorage.setItem('907t_theme', JSON.stringify(currentTheme)); }
+  }
+}
+
+// ─── PASSWORD WATCH ───────────────────────────────────────────────────────────
+function watchPasswordChanges() {
+  onSnapshot(doc(db, 'config', 'groupPassword'), async (snap) => {
+    if (!snap.exists() || !currentUser) return;
+    const current = snap.data().hash;
+    const userSnap = await getDoc(doc(db, 'userAuth', currentUser.uid));
+    if (!userSnap.exists()) return;
+    const userHash = userSnap.data().passwordHash;
+    if (userHash !== current) showPasswordOverlay(true);
+  });
+}
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+onAuthStateChanged(auth, async (user) => {
+  if (user) {
+    currentUser = user;
+    await ensureUserProfile(user);
+    const passOk = await checkUserPassword(user.uid);
+    if (!passOk) { showPasswordOverlay(false); return; }
+    watchPasswordChanges();
+    hideAuth();
+    initApp();
+  } else {
+    showAuthScreen();
+  }
+});
+
+// ─── SUBSCRIBE ────────────────────────────────────────────────────────────────
+function subscribeAll() {
+  if (unsubTrades) unsubTrades();
+  if (unsubMessages) unsubMessages();
+  if (unsubMembers) unsubMembers();
+
+  unsubTrades = onSnapshot(query(collection(db, 'trades'), orderBy('timestamp', 'desc')), (snap) => {
+    trades = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (currentPage === 'log') renderFeed();
+    if (currentPage === 'stats') renderStats();
+    updateGroupStats();
+  });
+
+  unsubMessages = onSnapshot(query(collection(db, 'messages'), orderBy('timestamp', 'asc')), (snap) => {
+    messages = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (currentPage === 'warroom') renderChat();
+  });
+
+  unsubMembers = onSnapshot(collection(db, 'users'), (snap) => {
+    members = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderMemberList();
+    if (currentPage === 'warroom') updateWarRoomHeader();
+  });
+}
+
+function initApp() {
+  document.getElementById('app').style.display = 'flex';
+  document.getElementById('auth-screen').style.display = 'none';
+  updateUserUI();
+  subscribeAll();
+  navigateTo('log');
+  runIntroAnimation();
+}
+
+// ─── NAVIGATION ───────────────────────────────────────────────────────────────
+function navigateTo(page) {
+  currentPage = page;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('active', p.id === `page-${page}`));
+  if (page === 'log') { renderFeed(); updateGroupStats(); }
+  if (page === 'warroom') { renderChat(); updateWarRoomHeader(); setTimeout(() => scrollChatToBottom(), 100); }
+  if (page === 'stats') renderStats();
+}
+
+// ─── INTRO ANIMATION ─────────────────────────────────────────────────────────
+function runIntroAnimation() {
+  const tl = gsap.timeline({ defaults: { ease: 'expo.out', duration: 0.7 } });
+  gsap.set('#topbar', { y: -80, opacity: 0 });
+  gsap.set('#sidebar-left', { x: -320, opacity: 0 });
+  gsap.set('#sidebar-right', { x: 320, opacity: 0 });
+  gsap.set('#main-content', { y: 80, opacity: 0 });
+  tl.to('#topbar', { y: 0, opacity: 1, duration: 0.5, ease: 'back.out(1.4)' })
+    .to(['#sidebar-left', '#sidebar-right'], { x: 0, opacity: 1, duration: 0.55, ease: 'back.out(1.2)' }, '-=0.15')
+    .to('#main-content', { y: 0, opacity: 1, duration: 0.55 }, '-=0.3');
+}
+
+// ─── RENDER FUNCTIONS ─────────────────────────────────────────────────────────
+
+function updateUserUI() {
+  const el = document.getElementById('user-avatar-btn');
+  if (currentUser?.photoURL) el.innerHTML = `<img src="${currentUser.photoURL}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;">`;
+  else el.textContent = (currentUser?.displayName || currentUser?.email || 'U')[0].toUpperCase();
+}
+
+function renderMemberList() {
+  const now = Date.now();
+  const el = document.getElementById('member-list');
+  if (!el) return;
+  el.innerHTML = members.map(m => {
+    const online = m.lastSeen?.toMillis && (now - m.lastSeen.toMillis()) < 5 * 60 * 1000;
+    return `<div class="member-row">
+      <span class="online-dot ${online ? 'online' : ''}"></span>
+      <img class="member-avatar" src="${m.avatar || ''}" onerror="this.style.display='none'" style="width:24px;height:24px;border-radius:50%;">
+      <span class="member-name">${m.username || m.email?.split('@')[0]}</span>
+    </div>`;
+  }).join('');
+}
+
+function getFilteredTrades() {
+  return trades.filter(t => {
+    if (tradeFilter !== 'ALL' && t.result !== tradeFilter) return false;
+    if (pairFilter !== 'ALL' && t.pair !== pairFilter) return false;
+    if (retakeFilter && !t.wouldRetake) return false;
+    return true;
+  });
+}
+
+function renderFeed() {
+  const el = document.getElementById('trade-feed');
+  if (!el) return;
+  const filtered = getFilteredTrades();
+  if (!filtered.length) { el.innerHTML = `<div class="empty-state">No trades yet. Be the first to log one.</div>`; return; }
+  el.innerHTML = filtered.map(t => tradeCard(t)).join('');
+  el.querySelectorAll('.screenshot-thumb').forEach(img => {
+    img.addEventListener('click', () => {
+      const tradeId = img.closest('.trade-card').dataset.id;
+      const trade = trades.find(t => t.id === tradeId);
+      if (trade?.screenshots?.length) { lightboxImages = trade.screenshots; lightboxIndex = parseInt(img.dataset.index); openLightbox(); }
+    });
+  });
+}
+
+function tradeCard(t) {
+  const isOwn = t.userId === currentUser?.uid;
+  const isAdmin = currentUser?.email === ADMIN_EMAIL;
+  const dateStr = t.timestamp?.toDate ? t.timestamp.toDate().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const timeStr = t.entryTime || '';
+  const pnl = parseFloat(t.pnl) || 0;
+  const pnlColor = pnl >= 0 ? 'var(--profit)' : 'var(--loss)';
+  const pnlSign = pnl >= 0 ? '+' : '';
+  const resultClass = t.result === 'WIN' ? 'badge-win' : 'badge-loss';
+  const screenshots = t.screenshots || [];
+  const confluences = t.confluences || [];
+
+  const screenHTML = screenshots.length ? `<div class="screenshot-strip">
+    ${screenshots.slice(0,3).map((s, i) => `<img class="screenshot-thumb" data-index="${i}" src="${s}" alt="chart">`).join('')}
+    ${screenshots.length > 3 ? `<div class="screenshot-more">+${screenshots.length - 3}</div>` : ''}
+  </div>` : '';
+
+  const confHTML = confluences.length ? `<div class="conf-tags">
+    ${confluences.map(c => `<span class="conf-tag conf-${c.type}">${c.label}</span>`).join('')}
+  </div>` : '';
+
+  const macroHTML = t.macro ? `<span class="macro-badge">${t.macro}</span>` : '';
+
+  return `<div class="trade-card" data-id="${t.id}">
+    <div class="trade-card-header">
+      <div class="trade-user">
+        <img class="trade-avatar" src="${t.userAvatar || ''}" onerror="this.style.display='none'">
+        <div>
+          <div class="trade-username">${t.username || 'Trader'}</div>
+          <div class="trade-meta">${dateStr} ${timeStr ? '· ' + timeStr : ''}</div>
+        </div>
+      </div>
+      <div class="trade-badges">
+        ${macroHTML}
+        <span class="result-badge ${resultClass}">${t.result || '—'}</span>
+      </div>
+    </div>
+    <div class="trade-stats-row">
+      <div class="trade-stat"><span class="stat-label">PAIR</span><span class="stat-val">${t.pair || '—'}</span></div>
+      <div class="trade-stat"><span class="stat-label">P&L</span><span class="stat-val" style="color:${pnlColor}">${pnlSign}$${Math.abs(pnl).toFixed(2)}</span></div>
+      <div class="trade-stat"><span class="stat-label">R:R</span><span class="stat-val">${t.rr || '—'}</span></div>
+      <div class="trade-stat"><span class="stat-label">CONF</span><span class="stat-val">${t.confidence || '—'}%</span></div>
+      ${t.wouldRetake ? `<div class="trade-stat"><span class="stat-label retake">✓ RETAKE</span></div>` : ''}
+    </div>
+    ${confHTML}
+    ${screenHTML}
+    ${t.notes ? `<div class="trade-notes">${t.notes}</div>` : ''}
+    <div class="trade-actions">
+      ${isOwn ? `<button class="action-btn" onclick="openEditTrade('${t.id}')">Edit</button>` : ''}
+      <button class="action-btn" onclick="replyToTrade('${t.id}')">Reply</button>
+      ${isAdmin ? `<button class="action-btn danger" onclick="deleteTrade('${t.id}')">Delete</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function updateGroupStats() {
+  if (!trades.length) return;
+  const wins = trades.filter(t => t.result === 'WIN').length;
+  const wr = ((wins / trades.length) * 100).toFixed(1);
+  const avgRR = (trades.reduce((a, t) => a + (parseFloat(t.rr) || 0), 0) / trades.length).toFixed(2);
+  const avgPnl = (trades.reduce((a, t) => a + (parseFloat(t.pnl) || 0), 0) / trades.length).toFixed(2);
+  const pairs = {};
+  trades.forEach(t => { if (t.pair) pairs[t.pair] = (pairs[t.pair] || 0) + 1; });
+  const topPair = Object.entries(pairs).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+
+  setText('stat-winrate', wr + '%');
+  setText('stat-trades', trades.length);
+  setText('stat-rr', avgRR);
+  setText('stat-pnl', (avgPnl >= 0 ? '+$' : '-$') + Math.abs(avgPnl).toFixed(2));
+  setText('stat-pair', topPair);
+
+  // Records
+  const best = trades.reduce((a, t) => parseFloat(t.pnl) > parseFloat(a?.pnl || -Infinity) ? t : a, null);
+  const worst = trades.reduce((a, t) => parseFloat(t.pnl) < parseFloat(a?.pnl || Infinity) ? t : a, null);
+  if (best) { setText('record-best-name', best.username); setText('record-best-val', '+$' + parseFloat(best.pnl).toFixed(2)); setText('record-best-pair', best.pair || ''); }
+  if (worst) { setText('record-worst-name', worst.username); setText('record-worst-val', '-$' + Math.abs(parseFloat(worst.pnl)).toFixed(2)); setText('record-worst-pair', worst.pair || ''); }
+}
+
+function setText(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
+
+// ─── WAR ROOM ─────────────────────────────────────────────────────────────────
+function renderChat() {
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  el.innerHTML = messages.map(m => chatMessage(m)).join('');
+  scrollChatToBottom();
+}
+
+function chatMessage(m) {
+  const isAdmin = currentUser?.email === ADMIN_EMAIL;
+  const isMine = m.userId === currentUser?.uid;
+  const time = m.timestamp?.toDate ? m.timestamp.toDate().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '';
+  const tradeRef = m.tradeRef ? `<div class="trade-ref" onclick="openTradePopup('${m.tradeRef.id}')">
+    <span class="trade-ref-badge ${m.tradeRef.result === 'WIN' ? 'badge-win' : 'badge-loss'}">${m.tradeRef.result}</span>
+    <span class="trade-ref-info">${m.tradeRef.pair} · ${m.tradeRef.result === 'WIN' ? '+' : ''}$${parseFloat(m.tradeRef.pnl || 0).toFixed(2)}</span>
+    <span class="trade-ref-tap">View trade ↗</span>
+  </div>` : '';
+  return `<div class="chat-msg ${isMine ? 'mine' : ''}">
+    <img class="msg-avatar" src="${m.userAvatar || ''}" onerror="this.style.display='none'">
+    <div class="msg-body">
+      <div class="msg-header"><span class="msg-username">${m.username || 'Trader'}</span><span class="msg-time">${time}</span></div>
+      ${tradeRef}
+      <div class="msg-text">${m.text}</div>
+    </div>
+    ${isAdmin ? `<button class="msg-delete" onclick="deleteMessage('${m.id}')">✕</button>` : ''}
+  </div>`;
+}
+
+function scrollChatToBottom() {
+  const el = document.getElementById('chat-messages');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+function updateWarRoomHeader() {
+  const now = Date.now();
+  const online = members.filter(m => m.lastSeen?.toMillis && (now - m.lastSeen.toMillis()) < 5 * 60 * 1000).length;
+  setText('warroom-count', `${online} online · ${members.length} members`);
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || !currentUser) return;
+  const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+  const userData = userSnap.data();
+  const msgData = {
+    text, userId: currentUser.uid,
+    username: userData.username || currentUser.displayName,
+    userAvatar: userData.avatar || currentUser.photoURL || '',
+    timestamp: serverTimestamp()
+  };
+  if (replyingToTrade) {
+    msgData.tradeRef = { id: replyingToTrade.id, pair: replyingToTrade.pair, result: replyingToTrade.result, pnl: replyingToTrade.pnl };
+    replyingToTrade = null;
+    document.getElementById('reply-preview')?.remove();
+  }
+  await addDoc(collection(db, 'messages'), msgData);
+  input.value = '';
+}
+
+async function deleteMessage(id) {
+  if (confirm('Delete this message?')) await deleteDoc(doc(db, 'messages', id));
+}
+
+// ─── MY STATS ─────────────────────────────────────────────────────────────────
+function renderStats() {
+  const myTrades = trades.filter(t => t.userId === currentUser?.uid);
+  const el = document.getElementById('stats-content');
+  if (!el) return;
+
+  const wins = myTrades.filter(t => t.result === 'WIN').length;
+  const losses = myTrades.length - wins;
+  const wr = myTrades.length ? ((wins / myTrades.length) * 100).toFixed(1) : '0';
+  const totalPnl = myTrades.reduce((a, t) => a + (parseFloat(t.pnl) || 0), 0);
+  const avgPnl = myTrades.length ? (totalPnl / myTrades.length).toFixed(2) : '0';
+  const avgRR = myTrades.length ? (myTrades.reduce((a, t) => a + (parseFloat(t.rr) || 0), 0) / myTrades.length).toFixed(2) : '0';
+  const retakes = myTrades.filter(t => t.wouldRetake).length;
+  const retakePct = myTrades.length ? ((retakes / myTrades.length) * 100).toFixed(1) : '0';
+  const avgConf = myTrades.length ? (myTrades.reduce((a, t) => a + (parseFloat(t.confidence) || 0), 0) / myTrades.length).toFixed(1) : '0';
+
+  el.innerHTML = `
+    <div class="stats-grid">
+      ${statCard('Win Rate', wr + '%', wins >= losses ? 'profit' : 'loss')}
+      ${statCard('Trades', myTrades.length)}
+      ${statCard('Avg R:R', avgRR)}
+      ${statCard('Avg P&L', (avgPnl >= 0 ? '+$' : '-$') + Math.abs(avgPnl), avgPnl >= 0 ? 'profit' : 'loss')}
+      ${statCard('Total P&L', (totalPnl >= 0 ? '+$' : '-$') + Math.abs(totalPnl).toFixed(2), totalPnl >= 0 ? 'profit' : 'loss')}
+      ${statCard('Retake %', retakePct + '%')}
+      ${statCard('Avg CR', avgConf + '%')}
+    </div>
+    <div class="my-trades-header">
+      <span>MY TRADES</span>
+      <div class="filter-chips">
+        <button class="chip ${tradeFilter==='ALL'?'active':''}" onclick="setFilter('ALL')">ALL</button>
+        <button class="chip ${tradeFilter==='WIN'?'active':''}" onclick="setFilter('WIN')">WIN</button>
+        <button class="chip ${tradeFilter==='LOSS'?'active':''}" onclick="setFilter('LOSS')">LOSS</button>
+      </div>
+    </div>
+    <div class="trade-grid">
+      ${myTrades.length ? myTrades.map(t => tradeGridTile(t)).join('') : '<div class="empty-state">No trades logged yet.</div>'}
+    </div>
+    ${renderPropAccounts()}
+  `;
+}
+
+function statCard(label, val, color) {
+  const c = color === 'profit' ? 'var(--profit)' : color === 'loss' ? 'var(--loss)' : 'var(--stat-accent)';
+  return `<div class="stat-card"><div class="stat-card-label">${label}</div><div class="stat-card-val" style="color:${c}">${val}</div></div>`;
+}
+
+function tradeGridTile(t) {
+  const pnl = parseFloat(t.pnl) || 0;
+  const pnlColor = pnl >= 0 ? 'var(--profit)' : 'var(--loss)';
+  const thumb = t.screenshots?.[0];
+  return `<div class="trade-tile" onclick="openTradePopup('${t.id}')">
+    ${thumb ? `<img class="tile-thumb" src="${thumb}" alt="">` : `<div class="tile-no-thumb">${t.pair || '—'}</div>`}
+    <div class="tile-info">
+      <span class="result-badge ${t.result === 'WIN' ? 'badge-win' : 'badge-loss'}" style="font-size:10px">${t.result}</span>
+      <span style="color:${pnlColor};font-family:'DM Mono',monospace;font-size:12px">${pnl >= 0 ? '+' : ''}$${Math.abs(pnl).toFixed(2)}</span>
+    </div>
+  </div>`;
+}
+
+function renderPropAccounts() {
+  const accounts = JSON.parse(localStorage.getItem(`907t_accounts_${currentUser?.uid}`) || '[]');
+  return `<div class="prop-accounts">
+    <div class="section-title">PROP ACCOUNTS <button class="action-btn" onclick="openAddAccount()" style="margin-left:8px">+ Add</button></div>
+    ${accounts.map((a, i) => {
+      const profit = trades.filter(t => t.userId === currentUser?.uid && t.account === a.name).reduce((s, t) => s + (parseFloat(t.pnl) || 0), 0) + (a.offset || 0);
+      const pct = Math.min(100, Math.abs(profit) / a.maxDrawdown * 100);
+      const barColor = pct >= 100 ? 'var(--loss)' : pct >= 75 ? '#eab308' : 'var(--profit)';
+      return `<div class="account-card">
+        <div class="account-name">${a.name}</div>
+        <div class="account-row"><span>Max DD</span><span>$${a.maxDrawdown.toLocaleString()}</span></div>
+        <div class="account-row"><span>P&L</span><span style="color:${profit>=0?'var(--profit)':'var(--loss)'}">$${profit.toFixed(2)}</span></div>
+        <div class="dd-bar"><div class="dd-fill" style="width:${pct}%;background:${barColor}"></div></div>
+        <div style="font-size:10px;color:var(--text-secondary);margin-top:4px">${pct.toFixed(1)}% drawdown used</div>
+      </div>`;
+    }).join('')}
+  </div>`;
+}
+
+// ─── LOG TRADE MODAL ──────────────────────────────────────────────────────────
+function openLogTrade() {
+  editingTradeId = null;
+  logTradeScreenshots = [];
+  document.getElementById('modal-log-trade').style.display = 'flex';
+  document.getElementById('log-trade-form').reset();
+  document.getElementById('screenshot-preview').innerHTML = '';
+  document.getElementById('modal-title').textContent = 'LOG TRADE';
+  document.getElementById('submit-trade-btn').textContent = 'POST TO GROUP LOG';
+  document.querySelectorAll('.conf-chip').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.pair-chip').forEach(c => c.classList.remove('active'));
+}
+
+function openEditTrade(id) {
+  const t = trades.find(x => x.id === id);
+  if (!t) return;
+  editingTradeId = id;
+  logTradeScreenshots = t.screenshots || [];
+  document.getElementById('modal-log-trade').style.display = 'flex';
+  document.getElementById('modal-title').textContent = 'EDIT TRADE';
+  document.getElementById('submit-trade-btn').textContent = 'SAVE CHANGES';
+  const f = document.getElementById('log-trade-form');
+  f.pnl.value = t.pnl || '';
+  f.rr.value = t.rr || '';
+  f.entry.value = t.entry || '';
+  f.exit.value = t.exit || '';
+  f.stop.value = t.stop || '';
+  f.target.value = t.target || '';
+  f.tradeDate.value = t.tradeDate || '';
+  f.entryTime.value = t.entryTime || '';
+  f.exitTime.value = t.exitTime || '';
+  f.notes.value = t.notes || '';
+  f.confidence.value = t.confidence || '';
+  document.getElementById('result-win').classList.toggle('active', t.result === 'WIN');
+  document.getElementById('result-loss').classList.toggle('active', t.result === 'LOSS');
+  document.getElementById('retake-yes').classList.toggle('active', t.wouldRetake === true);
+  document.getElementById('retake-no').classList.toggle('active', t.wouldRetake === false);
+  document.querySelectorAll('.pair-chip').forEach(c => c.classList.toggle('active', c.dataset.pair === t.pair));
+  const confIds = (t.confluences || []).map(c => c.id);
+  document.querySelectorAll('.conf-chip').forEach(c => c.classList.toggle('active', confIds.includes(c.dataset.id)));
+  renderScreenshotPreviews();
+}
+
+function renderScreenshotPreviews() {
+  const el = document.getElementById('screenshot-preview');
+  el.innerHTML = logTradeScreenshots.map((s, i) => `<div class="ss-thumb-wrap"><img src="${s}" class="ss-thumb"><button class="ss-remove" onclick="removeScreenshot(${i})">✕</button></div>`).join('');
+}
+
+function removeScreenshot(i) { logTradeScreenshots.splice(i, 1); renderScreenshotPreviews(); }
+
+async function submitTrade() {
+  const f = document.getElementById('log-trade-form');
+  const result = document.querySelector('.result-btn.active')?.dataset.result;
+  const pair = document.querySelector('.pair-chip.active')?.dataset.pair;
+  const wouldRetake = document.getElementById('retake-yes').classList.contains('active') ? true : document.getElementById('retake-no').classList.contains('active') ? false : null;
+  const confluences = Array.from(document.querySelectorAll('.conf-chip.active')).map(c => ({ id: c.dataset.id, label: c.dataset.label, type: c.dataset.type }));
+  const accounts = JSON.parse(localStorage.getItem(`907t_accounts_${currentUser?.uid}`) || '[]');
+  const account = document.querySelector('.account-chip.active')?.dataset.account || '';
+
+  const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+  const userData = userSnap.data();
+
+  // Auto-detect macro window
+  const entryTime = f.entryTime.value;
+  const macro = detectMacro(entryTime);
+
+  const data = {
+    userId: currentUser.uid, username: userData.username || currentUser.displayName,
+    userAvatar: userData.avatar || currentUser.photoURL || '',
+    pnl: f.pnl.value, rr: f.rr.value, result: result || '',
+    pair: pair || '', entry: f.entry.value, exit: f.exit.value,
+    stop: f.stop.value, target: f.target.value,
+    tradeDate: f.tradeDate.value, entryTime, exitTime: f.exitTime.value,
+    notes: f.notes.value, confidence: f.confidence.value,
+    wouldRetake, confluences, account, macro,
+    screenshots: logTradeScreenshots,
+  };
+
+  if (editingTradeId) {
+    await updateDoc(doc(db, 'trades', editingTradeId), data);
+  } else {
+    data.timestamp = serverTimestamp();
+    await addDoc(collection(db, 'trades'), data);
+  }
+  closeModal('modal-log-trade');
+}
+
+function detectMacro(time) {
+  if (!time) return null;
+  const [h, m] = time.split(':').map(Number);
+  const mins = h * 60 + m;
+  if (mins >= 9*60+50 && mins <= 10*60+10) return 'M1';
+  if (mins >= 10*60+50 && mins <= 11*60+10) return 'M2';
+  if (mins >= 13*60+50 && mins <= 14*60+10) return 'M3';
+  if (mins >= 15*60+0 && mins <= 15*60+15) return 'M4';
+  return null;
+}
+
+async function deleteTrade(id) {
+  if (confirm('Delete this trade?')) await deleteDoc(doc(db, 'trades', id));
+}
+
+function replyToTrade(id) {
+  const t = trades.find(x => x.id === id);
+  if (!t) return;
+  replyingToTrade = t;
+  navigateTo('warroom');
+  const existing = document.getElementById('reply-preview');
+  if (existing) existing.remove();
+  const preview = document.createElement('div');
+  preview.id = 'reply-preview';
+  preview.className = 'reply-preview';
+  preview.innerHTML = `<span class="${t.result === 'WIN' ? 'badge-win' : 'badge-loss'} result-badge">${t.result}</span> ${t.pair} · $${parseFloat(t.pnl||0).toFixed(2)} <button onclick="cancelReply()">✕</button>`;
+  document.getElementById('chat-input-row').prepend(preview);
+}
+
+function cancelReply() { replyingToTrade = null; document.getElementById('reply-preview')?.remove(); }
+
+function openTradePopup(id) {
+  const t = trades.find(x => x.id === id);
+  if (!t) return;
+  tradePopupData = t;
+  document.getElementById('trade-popup-content').innerHTML = tradeCard(t);
+  document.getElementById('modal-trade-popup').style.display = 'flex';
+}
+
+// ─── LIGHTBOX ─────────────────────────────────────────────────────────────────
+function openLightbox() {
+  document.getElementById('lightbox-img').src = lightboxImages[lightboxIndex];
+  document.getElementById('modal-lightbox').style.display = 'flex';
+}
+function lightboxPrev() { lightboxIndex = (lightboxIndex - 1 + lightboxImages.length) % lightboxImages.length; document.getElementById('lightbox-img').src = lightboxImages[lightboxIndex]; }
+function lightboxNext() { lightboxIndex = (lightboxIndex + 1) % lightboxImages.length; document.getElementById('lightbox-img').src = lightboxImages[lightboxIndex]; }
+
+// ─── SCREENSHOT UPLOAD ────────────────────────────────────────────────────────
+async function handleScreenshots(files) {
+  for (const file of files) {
+    const storageRef = ref(storage, `screenshots/${currentUser.uid}/${Date.now()}_${file.name}`);
+    const snap = await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(snap.ref);
+    logTradeScreenshots.push(url);
+  }
+  renderScreenshotPreviews();
+}
+
+// ─── SETTINGS ─────────────────────────────────────────────────────────────────
+function openSettings() {
+  document.getElementById('modal-settings').style.display = 'flex';
+  document.getElementById('settings-username').value = '';
+  loadThemeToUI();
+  const adminTab = document.getElementById('settings-tab-admin');
+  if (adminTab) adminTab.style.display = currentUser?.email === ADMIN_EMAIL ? 'block' : 'none';
+  if (currentUser?.email === ADMIN_EMAIL) loadAdminPanel();
+}
+
+function loadThemeToUI() {
+  const keys = ['bg','topbar','bottombar','cardBg','cardBorder','textPrimary','textSecondary','logoText','profit','loss','shadowColor','confluenceReversal','confluenceConfirmation','confluenceContinuation','chipActiveBg','chipActiveText','buttonHighlight','statAccent'];
+  keys.forEach(k => {
+    const el = document.getElementById(`theme-${k}`);
+    if (el) el.value = currentTheme[k] || '';
+  });
+}
+
+function saveTheme() {
+  const keys = ['bg','topbar','bottombar','cardBg','cardBorder','textPrimary','textSecondary','logoText','profit','loss','shadowColor','confluenceReversal','confluenceConfirmation','confluenceContinuation','chipActiveBg','chipActiveText','buttonHighlight','statAccent'];
+  keys.forEach(k => {
+    const el = document.getElementById(`theme-${k}`);
+    if (el) currentTheme[k] = el.value;
+  });
+  applyTheme(currentTheme);
+  localStorage.setItem('907t_theme', JSON.stringify(currentTheme));
+  if (currentUser) updateDoc(doc(db, 'users', currentUser.uid), { theme: currentTheme }).catch(() => {});
+}
+
+function applyPreset(name) {
+  const presets = {
+    default: DEFAULT_THEME,
+    midnight: { ...DEFAULT_THEME, bg: '#080810', topbar: '#0c0c18', cardBg: 'rgba(100,100,255,0.06)', cardBorder: 'rgba(100,100,255,0.15)', profit: '#34d399', loss: '#f87171', statAccent: '#818cf8' },
+    forest: { ...DEFAULT_THEME, bg: '#0a110a', topbar: '#0d160d', cardBg: 'rgba(34,197,94,0.05)', cardBorder: 'rgba(34,197,94,0.12)', profit: '#4ade80', loss: '#f87171', statAccent: '#86efac' },
+    crimson: { ...DEFAULT_THEME, bg: '#110808', topbar: '#160d0d', cardBg: 'rgba(239,68,68,0.06)', cardBorder: 'rgba(239,68,68,0.15)', profit: '#4ade80', loss: '#f87171', statAccent: '#fca5a5' },
+    sand: { ...DEFAULT_THEME, bg: '#0f0e0a', topbar: '#141310', cardBg: 'rgba(180,150,80,0.07)', cardBorder: 'rgba(180,150,80,0.15)', profit: '#86efac', loss: '#fca5a5', statAccent: '#fcd34d', logoText: '#fcd34d' },
+    'forest-camo': { ...DEFAULT_THEME, bg: '#1a2a1a', topbar: '#0f1f0f', cardBg: 'rgba(50,80,50,0.3)', cardBorder: 'rgba(80,120,80,0.2)', profit: '#4ade80', loss: '#f87171', statAccent: '#86efac', bgImage: 'https://www.transparenttextures.com/patterns/camouflage.png', bgImageEnabled: true }
+  };
+  if (presets[name]) { currentTheme = { ...presets[name] }; applyTheme(currentTheme); loadThemeToUI(); }
+}
+
+async function saveProfile() {
+  const username = document.getElementById('settings-username').value.trim();
+  if (username && currentUser) {
+    await updateDoc(doc(db, 'users', currentUser.uid), { username });
+    updateUserUI();
+  }
+}
+
+async function loadAdminPanel() {
+  const el = document.getElementById('admin-users-list');
+  if (!el) return;
+  el.innerHTML = '<div style="color:var(--text-secondary);font-size:12px">Loading...</div>';
+  const snap = await getDocs(collection(db, 'users'));
+  const users = snap.docs.map(d => d.data());
+  el.innerHTML = users.map(u => {
+    const myTrades = trades.filter(t => t.userId === u.uid);
+    const wins = myTrades.filter(t => t.result === 'WIN').length;
+    const wr = myTrades.length ? ((wins/myTrades.length)*100).toFixed(0) + '%' : '—';
+    return `<div class="admin-user-row">
+      <img src="${u.avatar||''}" onerror="this.style.display='none'" style="width:28px;height:28px;border-radius:50%">
+      <div style="flex:1">
+        <div style="color:var(--text-primary);font-size:13px">${u.username || u.email}</div>
+        <div style="color:var(--text-secondary);font-size:11px">${u.email}</div>
+      </div>
+      <div style="text-align:right;font-family:'DM Mono',monospace;font-size:12px">
+        <div>${myTrades.length} trades</div>
+        <div style="color:${wins>=(myTrades.length-wins)?'var(--profit)':'var(--loss)'}">${wr} WR</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function changeGroupPassword() {
+  const pw = document.getElementById('new-group-password').value.trim();
+  if (!pw || pw.length < 4) { alert('Password must be at least 4 characters.'); return; }
+  const hash = await hashPassword(pw);
+  await setDoc(doc(db, 'config', 'groupPassword'), { hash, changedAt: serverTimestamp(), changedBy: currentUser.uid });
+  await saveUserPasswordHash(currentUser.uid, hash);
+  document.getElementById('new-group-password').value = '';
+  alert('Password updated. All other users will be prompted to re-enter it.');
+}
+
+// ─── PASSWORD OVERLAY ─────────────────────────────────────────────────────────
+function showPasswordOverlay(isChange) {
+  const el = document.getElementById('password-overlay');
+  el.style.display = 'flex';
+  document.getElementById('pw-overlay-title').textContent = isChange ? 'NEW PASSWORD REQUIRED' : 'ENTER GROUP PASSWORD';
+  document.getElementById('pw-overlay-sub').textContent = isChange ? 'The group password has been updated. Enter the new password to continue.' : 'This site is private. Enter the group password to access.';
+  document.getElementById('pw-overlay-input').value = '';
+}
+
+async function submitPasswordOverlay() {
+  const pw = document.getElementById('pw-overlay-input').value.trim();
+  if (!pw) return;
+  const hash = await hashPassword(pw);
+  const stored = await getGroupPassword();
+  if (!stored || hash === stored) {
+    if (currentUser) await saveUserPasswordHash(currentUser.uid, hash);
+    document.getElementById('password-overlay').style.display = 'none';
+    if (!document.getElementById('app').style.display || document.getElementById('app').style.display === 'none') {
+      if (currentUser) { await ensureUserProfile(currentUser); watchPasswordChanges(); hideAuth(); initApp(); }
+    }
+  } else {
+    document.getElementById('pw-overlay-error').textContent = 'Incorrect password. Try again.';
+  }
+}
+
+// ─── PROP ACCOUNTS ────────────────────────────────────────────────────────────
+function openAddAccount() {
+  document.getElementById('modal-add-account').style.display = 'flex';
+}
+
+function saveAccount() {
+  const name = document.getElementById('acct-name').value.trim();
+  const dd = parseFloat(document.getElementById('acct-dd').value);
+  if (!name || !dd) return;
+  const accounts = JSON.parse(localStorage.getItem(`907t_accounts_${currentUser?.uid}`) || '[]');
+  accounts.push({ name, maxDrawdown: dd, offset: 0 });
+  localStorage.setItem(`907t_accounts_${currentUser?.uid}`, JSON.stringify(accounts));
+  closeModal('modal-add-account');
+  renderStats();
+}
+
+// ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
+function showAuthScreen() {
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+
+function hideAuth() {
+  document.getElementById('auth-screen').style.display = 'none';
+}
+
+async function signInWithGoogle() {
+  try { await signInWithPopup(auth, provider); }
+  catch (e) { console.error(e); showAuthError('Google sign in failed. Try email instead.'); }
+}
+
+async function signUpWithEmail() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const displayName = document.getElementById('auth-name')?.value.trim() || email.split('@')[0];
+  const authError = document.getElementById('auth-error');
+  if (!email || !password) { showAuthError('Enter your email and password.'); return; }
+  if (password.length < 6) { showAuthError('Password must be at least 6 characters.'); return; }
+  try {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(cred.user, { displayName });
+  } catch (e) {
+    if (e.code === 'auth/email-already-in-use') showAuthError('Account already exists. Try signing in.');
+    else if (e.code === 'auth/invalid-email') showAuthError('Invalid email address.');
+    else showAuthError('Sign up failed. Try again.');
+  }
+}
+
+async function signInWithEmail() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  if (!email || !password) { showAuthError('Enter your email and password.'); return; }
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+  } catch (e) {
+    if (e.code === 'auth/user-not-found' || e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') showAuthError('Wrong email or password.');
+    else if (e.code === 'auth/invalid-email') showAuthError('Invalid email address.');
+    else showAuthError('Sign in failed. Try again.');
+  }
+}
+
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  if (el) { el.textContent = msg; el.style.display = 'block'; }
+}
+
+function toggleAuthMode() {
+  const isSignUp = document.getElementById('auth-toggle-btn').dataset.mode === 'signup';
+  const newMode = isSignUp ? 'signin' : 'signup';
+  document.getElementById('auth-toggle-btn').dataset.mode = newMode;
+  document.getElementById('auth-name-wrap').style.display = newMode === 'signup' ? 'block' : 'none';
+  document.getElementById('auth-submit-btn').textContent = newMode === 'signup' ? 'CREATE ACCOUNT' : 'SIGN IN';
+  document.getElementById('auth-toggle-text').textContent = newMode === 'signup' ? 'Already have an account?' : "Don't have an account?";
+  document.getElementById('auth-toggle-btn').textContent = newMode === 'signup' ? 'Sign in' : 'Sign up';
+  document.getElementById('auth-error').style.display = 'none';
+}
+
+function handleAuthSubmit() {
+  const mode = document.getElementById('auth-toggle-btn').dataset.mode;
+  if (mode === 'signup') signUpWithEmail();
+  else signInWithEmail();
+}
+
+async function handleSignOut() {
+  if (unsubTrades) unsubTrades();
+  if (unsubMessages) unsubMessages();
+  if (unsubMembers) unsubMembers();
+  currentUser = null;
+  await signOut(auth);
+}
+
+// ─── FILTERS ──────────────────────────────────────────────────────────────────
+function setFilter(f) { tradeFilter = f; if (currentPage === 'log') renderFeed(); if (currentPage === 'stats') renderStats(); }
+function setPairFilter(p) { pairFilter = p; renderFeed(); }
+function toggleRetakeFilter() { retakeFilter = !retakeFilter; document.getElementById('retake-toggle').classList.toggle('active', retakeFilter); renderFeed(); }
+
+// ─── MODALS ───────────────────────────────────────────────────────────────────
+function closeModal(id) { document.getElementById(id).style.display = 'none'; }
+
+function switchSettingsTab(tab) {
+  document.querySelectorAll('.settings-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.settings-tab-panel').forEach(p => p.style.display = p.id === `settings-panel-${tab}` ? 'block' : 'none');
+}
+
+// ─── EXPOSE GLOBALS ───────────────────────────────────────────────────────────
+Object.assign(window, {
+  navigateTo, openLogTrade, openEditTrade, submitTrade, deleteTrade,
+  sendMessage, deleteMessage, replyToTrade, cancelReply, openTradePopup,
+  openLightbox, lightboxPrev, lightboxNext, removeScreenshot,
+  openSettings, saveTheme, applyPreset, saveProfile, changeGroupPassword,
+  submitPasswordOverlay, signInWithGoogle, signInWithEmail, signUpWithEmail,
+  handleAuthSubmit, toggleAuthMode, handleSignOut,
+  setFilter, setPairFilter, toggleRetakeFilter,
+  closeModal, switchSettingsTab, openAddAccount, saveAccount,
+  handleScreenshots: (e) => handleScreenshots(e.target.files)
+});
+</script>
+
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #0a0a0a;
+  --topbar: #0d0d0d;
+  --bottombar: #0d0d0d;
+  --card-bg: rgba(255,255,255,0.04);
+  --card-border: rgba(255,255,255,0.08);
+  --text-primary: #f0f0f0;
+  --text-secondary: #555;
+  --logo-text: #ffffff;
+  --profit: #22c55e;
+  --loss: #ef4444;
+  --shadow-color: rgba(0,0,0,0.6);
+  --confluence-reversal: #a855f7;
+  --confluence-confirmation: #3b82f6;
+  --confluence-continuation: #22c55e;
+  --chip-active-bg: rgba(255,255,255,0.12);
+  --chip-active-text: #fff;
+  --btn-highlight: #ffffff;
+  --stat-accent: #f0f0f0;
+}
+
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  font-family: 'Syne', sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+/* ─── AUTH SCREEN ─── */
+#auth-screen {
+  position: fixed; inset: 0; z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  background: #050505;
+}
+.auth-box {
+  text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  width: 100%; max-width: 360px; padding: 0 24px;
+}
+.auth-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(48px, 10vw, 80px);
+  letter-spacing: 4px;
+  color: #fff;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.auth-sub { color: var(--text-secondary); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; font-family: 'DM Mono', monospace; margin-bottom: 8px; }
+.auth-form { display: flex; flex-direction: column; gap: 10px; width: 100%; }
+.auth-input {
+  width: 100%; padding: 13px 16px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: 'DM Mono', monospace; font-size: 13px;
+  outline: none; transition: border-color 0.2s;
+}
+.auth-input:focus { border-color: rgba(255,255,255,0.3); }
+.auth-input::placeholder { color: var(--text-secondary); }
+#auth-error {
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--loss); text-align: left; padding: 0 2px;
+}
+.auth-btn {
+  width: 100%; padding: 13px;
+  background: #fff; color: #000;
+  border: none; border-radius: 6px;
+  font-family: 'Syne', sans-serif;
+  font-size: 13px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; transition: opacity 0.2s; margin-top: 2px;
+}
+.auth-btn:hover { opacity: 0.85; }
+.auth-toggle-row {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-secondary);
+}
+.auth-toggle-link {
+  background: none; border: none; color: #fff;
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  cursor: pointer; text-decoration: underline; padding: 0;
+}
+.auth-divider {
+  width: 100%; display: flex; align-items: center; gap: 12px;
+  font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-secondary);
+}
+.auth-divider::before, .auth-divider::after {
+  content: ''; flex: 1; height: 1px; background: rgba(255,255,255,0.08);
+}
+.auth-google-btn {
+  width: 100%; padding: 12px 16px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px; color: var(--text-primary);
+  font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: background 0.2s, border-color 0.2s;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+}
+.auth-google-btn:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+
+/* ─── APP SHELL ─── */
+#app {
+  display: none;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ─── TOPBAR ─── */
+#topbar {
+  background: var(--topbar);
+  border-bottom: 1px solid var(--card-border);
+  height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  position: relative; z-index: 100; flex-shrink: 0;
+  backdrop-filter: blur(20px);
+}
+.topbar-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(24px, 4vw, 36px);
+  letter-spacing: 6px;
+  color: var(--logo-text);
+  text-align: center;
+  width: 100%;
+}
+
+/* ─── MAIN AREA ─── */
+#app-body {
+  flex: 1; display: flex; overflow: hidden;
+}
+
+/* ─── BOTTOM NAV ─── */
+#bottomnav {
+  background: var(--bottombar);
+  border-top: 1px solid var(--card-border);
+  display: flex; align-items: center;
+  height: 56px; flex-shrink: 0;
+  backdrop-filter: blur(20px);
+}
+#user-avatar-btn {
+  width: 40px; height: 56px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--text-primary);
+  cursor: pointer; font-size: 14px; font-weight: 700;
+  flex-shrink: 0; padding: 0 12px;
+}
+.nav-tabs { display: flex; flex: 1; }
+.tab-btn {
+  flex: 1; background: none; border: none;
+  color: var(--text-secondary);
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; padding: 8px 4px;
+  transition: color 0.2s;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+}
+.tab-btn .tab-icon { font-size: 16px; }
+.tab-btn.active { color: var(--text-primary); }
+.tab-btn.active::after {
+  content: ''; display: block; width: 20px; height: 2px;
+  background: var(--text-primary); border-radius: 2px; margin: 2px auto 0;
+}
+
+/* ─── PAGES ─── */
+.page { display: none; flex: 1; overflow: hidden; }
+.page.active { display: flex; }
+
+/* ─── LOG PAGE ─── */
+#page-log { flex-direction: row; }
+
+#sidebar-left, #sidebar-right {
+  width: 220px; flex-shrink: 0;
+  background: var(--card-bg);
+  border-right: 1px solid var(--card-border);
+  overflow-y: auto; padding: 16px 12px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+#sidebar-right { border-right: none; border-left: 1px solid var(--card-border); }
+
+@media (max-width: 768px) {
+  #sidebar-left, #sidebar-right { display: none; }
+}
+
+#main-content {
+  flex: 1; overflow-y: auto; display: flex; flex-direction: column;
+}
+
+.section-title {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--text-secondary); margin-bottom: 10px;
+  display: flex; align-items: center;
+}
+
+/* Member list */
+.member-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0; border-bottom: 1px solid var(--card-border);
+}
+.member-row:last-child { border-bottom: none; }
+.online-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--text-secondary); flex-shrink: 0;
+}
+.online-dot.online { background: var(--profit); box-shadow: 0 0 6px var(--profit); }
+.member-name { font-size: 12px; color: var(--text-primary); }
+
+/* Group stats */
+.stat-grid-compact {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.stat-compact {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--card-border);
+  border-radius: 6px; padding: 8px;
+}
+.stat-compact-label { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; color: var(--text-secondary); text-transform: uppercase; }
+.stat-compact-val { font-family: 'DM Mono', monospace; font-size: 14px; color: var(--stat-accent); margin-top: 2px; }
+
+/* Records */
+.record-card {
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 8px;
+}
+.record-label { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px; color: var(--text-secondary); text-transform: uppercase; }
+.record-val { font-family: 'DM Mono', monospace; font-size: 18px; margin: 4px 0; }
+.record-meta { font-size: 11px; color: var(--text-secondary); }
+
+/* Feed header */
+.feed-header {
+  padding: 16px 16px 0;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.feed-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 3px; }
+.feed-date { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-secondary); }
+
+.log-trade-btn {
+  background: var(--btn-highlight);
+  color: #000;
+  border: none; border-radius: 4px;
+  padding: 10px 20px;
+  font-family: 'Syne', sans-serif;
+  font-size: 12px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  box-shadow: 0 4px 20px var(--shadow-color);
+}
+.log-trade-btn:hover { opacity: 0.85; }
+
+/* Filter bar */
+.filter-bar {
+  padding: 12px 16px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--card-border);
+}
+.chip {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--card-border);
+  border-radius: 100px; padding: 5px 14px;
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--text-secondary); cursor: pointer;
+  transition: all 0.15s; white-space: nowrap;
+}
+.chip.active, .chip:hover {
+  background: var(--chip-active-bg);
+  color: var(--chip-active-text);
+  border-color: rgba(255,255,255,0.2);
+}
+.pair-select {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--card-border);
+  border-radius: 100px; padding: 5px 12px;
+  color: var(--text-secondary); font-family: 'DM Mono', monospace; font-size: 11px;
+  cursor: pointer;
+}
+.pair-select option { background: #1a1a1a; }
+
+/* Trade feed */
+#trade-feed {
+  flex: 1; overflow-y: auto; padding: 12px 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+.trade-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 10px; padding: 14px 16px;
+  transition: border-color 0.2s;
+}
+.trade-card:hover { border-color: rgba(255,255,255,0.16); }
+
+.trade-card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+.trade-user { display: flex; align-items: center; gap: 10px; }
+.trade-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: rgba(255,255,255,0.1); }
+.trade-username { font-size: 13px; font-weight: 700; color: var(--text-primary); }
+.trade-meta { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-secondary); margin-top: 1px; }
+.trade-badges { display: flex; align-items: center; gap: 6px; }
+
+.result-badge {
+  font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 700;
+  letter-spacing: 1px; padding: 3px 8px; border-radius: 4px;
+}
+.badge-win { background: rgba(34,197,94,0.15); color: var(--profit); border: 1px solid rgba(34,197,94,0.3); }
+.badge-loss { background: rgba(239,68,68,0.15); color: var(--loss); border: 1px solid rgba(239,68,68,0.3); }
+
+.macro-badge {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  background: rgba(34,197,94,0.12); color: var(--profit);
+  border: 1px solid rgba(34,197,94,0.25); border-radius: 4px; padding: 2px 7px;
+}
+
+.trade-stats-row {
+  display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 8px;
+}
+.trade-stat { display: flex; flex-direction: column; gap: 1px; }
+.stat-label {
+  font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px;
+  text-transform: uppercase; color: var(--text-secondary);
+}
+.stat-label.retake { color: var(--profit); }
+.stat-val { font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-primary); }
+
+.conf-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.conf-tag {
+  font-family: 'DM Mono', monospace; font-size: 10px;
+  padding: 2px 8px; border-radius: 100px;
+}
+.conf-reversal { background: rgba(168,85,247,0.15); color: var(--confluence-reversal); border: 1px solid rgba(168,85,247,0.25); }
+.conf-confirmation { background: rgba(59,130,246,0.15); color: var(--confluence-confirmation); border: 1px solid rgba(59,130,246,0.25); }
+.conf-continuation { background: rgba(34,197,94,0.15); color: var(--confluence-continuation); border: 1px solid rgba(34,197,94,0.25); }
+
+.screenshot-strip { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.screenshot-thumb {
+  width: 80px; height: 56px; object-fit: cover; border-radius: 6px;
+  cursor: pointer; border: 1px solid var(--card-border);
+  transition: border-color 0.2s;
+}
+.screenshot-thumb:hover { border-color: rgba(255,255,255,0.3); }
+.screenshot-more {
+  width: 80px; height: 56px; border-radius: 6px;
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-secondary);
+}
+
+.trade-notes {
+  font-size: 12px; color: var(--text-secondary); line-height: 1.5;
+  margin-bottom: 10px; padding: 8px; background: rgba(255,255,255,0.03);
+  border-radius: 6px; border-left: 2px solid var(--card-border);
+}
+
+.trade-actions { display: flex; gap: 8px; }
+.action-btn {
+  background: rgba(255,255,255,0.06); border: 1px solid var(--card-border);
+  border-radius: 4px; padding: 5px 12px;
+  color: var(--text-secondary); font-family: 'DM Mono', monospace; font-size: 10px;
+  letter-spacing: 1px; cursor: pointer; transition: all 0.15s;
+  text-transform: uppercase;
+}
+.action-btn:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
+.action-btn.danger:hover { background: rgba(239,68,68,0.15); color: var(--loss); border-color: rgba(239,68,68,0.3); }
+
+.empty-state {
+  text-align: center; padding: 48px 24px;
+  color: var(--text-secondary); font-size: 13px;
+  font-family: 'DM Mono', monospace; letter-spacing: 1px;
+}
+
+/* ─── WAR ROOM ─── */
+#page-warroom { flex-direction: column; }
+.warroom-header {
+  padding: 16px; border-bottom: 1px solid var(--card-border);
+  display: flex; justify-content: space-between; align-items: center;
+  flex-shrink: 0;
+}
+.warroom-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 3px; }
+#warroom-count { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-secondary); }
+
+#chat-messages {
+  flex: 1; overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+.chat-msg {
+  display: flex; gap: 10px; align-items: flex-start;
+  position: relative;
+}
+.chat-msg.mine { flex-direction: row-reverse; }
+.msg-avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: rgba(255,255,255,0.1); }
+.msg-body { max-width: 75%; display: flex; flex-direction: column; gap: 4px; }
+.chat-msg.mine .msg-body { align-items: flex-end; }
+.msg-header { display: flex; gap: 8px; align-items: baseline; }
+.msg-username { font-size: 12px; font-weight: 700; color: var(--text-primary); }
+.msg-time { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-secondary); }
+.msg-text {
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: 10px; padding: 8px 12px;
+  font-size: 13px; color: var(--text-primary); line-height: 1.5;
+  word-break: break-word;
+}
+.chat-msg.mine .msg-text { background: rgba(255,255,255,0.08); }
+
+.trade-ref {
+  background: rgba(255,255,255,0.04); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 8px 12px; cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  transition: border-color 0.2s; margin-bottom: 4px;
+}
+.trade-ref:hover { border-color: rgba(255,255,255,0.2); }
+.trade-ref-info { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-primary); }
+.trade-ref-tap { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-secondary); margin-left: auto; }
+
+.msg-delete {
+  background: none; border: none; color: var(--text-secondary);
+  cursor: pointer; font-size: 11px; padding: 4px;
+  opacity: 0; transition: opacity 0.2s;
+  position: absolute; right: -20px; top: 0;
+}
+.chat-msg:hover .msg-delete { opacity: 1; }
+
+#chat-input-row {
+  padding: 12px 16px; border-top: 1px solid var(--card-border);
+  display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;
+}
+.reply-preview {
+  padding: 6px 12px; background: rgba(255,255,255,0.05);
+  border-radius: 6px; font-size: 12px; color: var(--text-secondary);
+  display: flex; align-items: center; gap: 8px;
+}
+.reply-preview button { background: none; border: none; color: var(--text-secondary); cursor: pointer; margin-left: auto; }
+
+.chat-input-inner { display: flex; gap: 8px; }
+#chat-input {
+  flex: 1; background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 10px 14px;
+  color: var(--text-primary); font-family: 'Syne', sans-serif; font-size: 13px;
+  outline: none;
+}
+#chat-input:focus { border-color: rgba(255,255,255,0.2); }
+.send-btn {
+  background: var(--btn-highlight); color: #000;
+  border: none; border-radius: 8px; padding: 10px 20px;
+  font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+  cursor: pointer; transition: opacity 0.2s;
+}
+.send-btn:hover { opacity: 0.85; }
+
+/* ─── MY STATS ─── */
+#page-stats { overflow-y: auto; padding: 16px; flex-direction: column; gap: 16px; }
+.stats-header { display: flex; justify-content: space-between; align-items: center; }
+.stats-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 3px; }
+
+#stats-content { display: flex; flex-direction: column; gap: 16px; }
+
+.stats-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px;
+}
+.stat-card {
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 12px;
+}
+.stat-card-label { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px; color: var(--text-secondary); text-transform: uppercase; }
+.stat-card-val { font-family: 'DM Mono', monospace; font-size: 20px; margin-top: 4px; }
+
+.my-trades-header {
+  display: flex; justify-content: space-between; align-items: center;
+  font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px;
+  color: var(--text-secondary); text-transform: uppercase;
+}
+.filter-chips { display: flex; gap: 6px; }
+
+.trade-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px;
+}
+.trade-tile {
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: 8px; overflow: hidden; cursor: pointer;
+  transition: border-color 0.2s;
+}
+.trade-tile:hover { border-color: rgba(255,255,255,0.2); }
+.tile-thumb { width: 100%; height: 80px; object-fit: cover; display: block; }
+.tile-no-thumb {
+  height: 80px; display: flex; align-items: center; justify-content: center;
+  font-family: 'DM Mono', monospace; font-size: 16px; color: var(--text-secondary);
+}
+.tile-info { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; }
+
+/* Prop accounts */
+.prop-accounts { display: flex; flex-direction: column; gap: 10px; }
+.account-card {
+  background: var(--card-bg); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 12px;
+}
+.account-name { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.account-row { display: flex; justify-content: space-between; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px; }
+.dd-bar { height: 4px; background: rgba(255,255,255,0.08); border-radius: 2px; margin-top: 8px; }
+.dd-fill { height: 100%; border-radius: 2px; transition: width 0.5s; }
+
+/* ─── MODALS ─── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+  display: none; align-items: center; justify-content: center;
+  padding: 16px;
+}
+.modal-box {
+  background: #111; border: 1px solid var(--card-border);
+  border-radius: 12px; width: 100%; max-width: 520px;
+  max-height: 90vh; overflow-y: auto;
+  padding: 24px;
+}
+.modal-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px;
+}
+.modal-title-text { font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 3px; }
+.modal-close {
+  background: none; border: none; color: var(--text-secondary);
+  font-size: 20px; cursor: pointer; padding: 4px 8px;
+}
+.modal-close:hover { color: var(--text-primary); }
+
+/* Form */
+.form-group { margin-bottom: 16px; }
+.form-label {
+  display: block; font-family: 'DM Mono', monospace;
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--text-secondary); margin-bottom: 6px;
+}
+.form-input {
+  width: 100%; background: rgba(255,255,255,0.05);
+  border: 1px solid var(--card-border); border-radius: 6px;
+  padding: 10px 12px; color: var(--text-primary);
+  font-family: 'Syne', sans-serif; font-size: 13px; outline: none;
+}
+.form-input:focus { border-color: rgba(255,255,255,0.2); }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+/* Pair chips */
+.pair-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pair-chip {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--card-border);
+  border-radius: 100px; padding: 5px 12px;
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--text-secondary); cursor: pointer; transition: all 0.15s;
+}
+.pair-chip.active {
+  background: var(--chip-active-bg); color: var(--chip-active-text);
+  border-color: rgba(255,255,255,0.25);
+}
+
+/* Confluence chips */
+.conf-group { margin-bottom: 12px; }
+.conf-group-label {
+  font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--text-secondary); margin-bottom: 6px;
+}
+.conf-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.conf-chip {
+  border-radius: 100px; padding: 4px 12px;
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  cursor: pointer; transition: all 0.15s; border: 1px solid transparent;
+}
+.conf-chip[data-type="reversal"] { background: rgba(168,85,247,0.1); color: var(--confluence-reversal); border-color: rgba(168,85,247,0.2); }
+.conf-chip[data-type="confirmation"] { background: rgba(59,130,246,0.1); color: var(--confluence-confirmation); border-color: rgba(59,130,246,0.2); }
+.conf-chip[data-type="continuation"] { background: rgba(34,197,94,0.1); color: var(--confluence-continuation); border-color: rgba(34,197,94,0.2); }
+.conf-chip.active { opacity: 1; filter: brightness(1.3); }
+.conf-chip:not(.active) { opacity: 0.5; }
+
+/* Result buttons */
+.result-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.result-btn {
+  padding: 14px; border-radius: 8px; border: 2px solid var(--card-border);
+  font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 3px;
+  cursor: pointer; background: transparent; transition: all 0.2s;
+}
+#result-win { color: var(--profit); }
+#result-win.active { background: rgba(34,197,94,0.15); border-color: var(--profit); }
+#result-loss { color: var(--loss); }
+#result-loss.active { background: rgba(239,68,68,0.15); border-color: var(--loss); }
+
+/* Retake */
+.toggle-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.toggle-btn {
+  padding: 10px; border-radius: 8px; border: 1px solid var(--card-border);
+  font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 1px;
+  cursor: pointer; background: transparent; color: var(--text-secondary);
+  transition: all 0.2s;
+}
+.toggle-btn.active { background: var(--chip-active-bg); color: var(--chip-active-text); border-color: rgba(255,255,255,0.2); }
+
+/* Screenshot upload */
+.upload-zone {
+  border: 2px dashed var(--card-border); border-radius: 8px;
+  padding: 20px; text-align: center; cursor: pointer;
+  transition: border-color 0.2s;
+}
+.upload-zone:hover { border-color: rgba(255,255,255,0.25); }
+.upload-label { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-secondary); }
+#screenshot-preview { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.ss-thumb-wrap { position: relative; }
+.ss-thumb { width: 72px; height: 52px; object-fit: cover; border-radius: 6px; }
+.ss-remove {
+  position: absolute; top: -6px; right: -6px;
+  background: var(--loss); color: #fff; border: none;
+  border-radius: 50%; width: 18px; height: 18px;
+  font-size: 9px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+
+/* Submit btn */
+.submit-btn {
+  width: 100%; padding: 14px;
+  background: var(--btn-highlight); color: #000;
+  border: none; border-radius: 8px;
+  font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
+  cursor: pointer; margin-top: 16px;
+  transition: opacity 0.2s;
+}
+.submit-btn:hover { opacity: 0.85; }
+
+/* ─── SETTINGS MODAL ─── */
+.settings-tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid var(--card-border); }
+.settings-tab-btn {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  padding: 8px 16px; color: var(--text-secondary);
+  font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px;
+  text-transform: uppercase; cursor: pointer; margin-bottom: -1px;
+  transition: all 0.15s;
+}
+.settings-tab-btn.active { color: var(--text-primary); border-bottom-color: var(--text-primary); }
+
+.theme-section { margin-bottom: 20px; }
+.theme-section-title {
+  font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--text-secondary);
+  margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--card-border);
+}
+.theme-row {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 10px;
+}
+.theme-row-label { font-size: 12px; color: var(--text-primary); }
+.theme-color-input {
+  width: 40px; height: 28px; padding: 0; border: 1px solid var(--card-border);
+  border-radius: 4px; cursor: pointer; background: none;
+}
+.preset-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px; }
+.preset-chip {
+  background: rgba(255,255,255,0.05); border: 1px solid var(--card-border);
+  border-radius: 100px; padding: 5px 14px;
+  font-family: 'DM Mono', monospace; font-size: 11px;
+  color: var(--text-secondary); cursor: pointer; transition: all 0.15s;
+}
+.preset-chip:hover { background: var(--chip-active-bg); color: var(--chip-active-text); }
+
+/* Admin */
+.admin-user-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0; border-bottom: 1px solid var(--card-border);
+}
+.admin-user-row:last-child { border-bottom: none; }
+
+/* ─── PASSWORD OVERLAY ─── */
+#password-overlay {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,0.95); backdrop-filter: blur(20px);
+  display: none; align-items: center; justify-content: center;
+}
+.pw-overlay-box {
+  text-align: center; max-width: 380px; width: 100%; padding: 32px 24px;
+  background: #111; border: 1px solid var(--card-border); border-radius: 12px;
+}
+.pw-overlay-title {
+  font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 4px;
+  color: var(--text-primary); margin-bottom: 8px;
+}
+.pw-overlay-sub { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.6; }
+#pw-overlay-input {
+  width: 100%; background: rgba(255,255,255,0.06); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 12px 16px; color: var(--text-primary);
+  font-family: 'DM Mono', monospace; font-size: 16px; text-align: center;
+  letter-spacing: 4px; outline: none; margin-bottom: 12px;
+}
+#pw-overlay-input:focus { border-color: rgba(255,255,255,0.3); }
+#pw-overlay-error { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--loss); min-height: 16px; margin-bottom: 12px; }
+.pw-submit-btn {
+  width: 100%; padding: 12px;
+  background: var(--btn-highlight); color: #000;
+  border: none; border-radius: 8px;
+  font-family: 'Syne', sans-serif; font-size: 14px; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase; cursor: pointer;
+}
+
+/* ─── LIGHTBOX ─── */
+#modal-lightbox .modal-box {
+  max-width: 90vw; background: transparent; border: none; padding: 0; position: relative;
+}
+#lightbox-img { max-width: 100%; max-height: 80vh; border-radius: 8px; display: block; }
+.lightbox-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  background: rgba(0,0,0,0.6); border: 1px solid var(--card-border);
+  border-radius: 50%; width: 40px; height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; cursor: pointer; font-size: 18px;
+}
+.lightbox-nav.prev { left: -50px; }
+.lightbox-nav.next { right: -50px; }
+
+/* ─── SCROLLBAR ─── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* ─── ADD ACCOUNT MODAL ─── */
+#modal-add-account .modal-box { max-width: 360px; }
+</style>
+</head>
+<body>
+
+<!-- ─── PASSWORD OVERLAY ─── -->
+<div id="password-overlay">
+  <div class="pw-overlay-box">
+    <div class="pw-overlay-title" id="pw-overlay-title">ENTER GROUP PASSWORD</div>
+    <div class="pw-overlay-sub" id="pw-overlay-sub">This site is private. Enter the group password to access.</div>
+    <input type="password" id="pw-overlay-input" placeholder="••••••••" onkeydown="if(event.key==='Enter')submitPasswordOverlay()">
+    <div id="pw-overlay-error"></div>
+    <button class="pw-submit-btn" onclick="submitPasswordOverlay()">ENTER</button>
+  </div>
+</div>
+
+<!-- ─── AUTH SCREEN ─── -->
+<div id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">907Traders</div>
+    <div class="auth-sub">War Room · Private Access</div>
+
+    <!-- Email/Password form -->
+    <div class="auth-form">
+      <div id="auth-name-wrap" style="display:none">
+        <input class="auth-input" id="auth-name" type="text" placeholder="Display name" autocomplete="name">
+      </div>
+      <input class="auth-input" id="auth-email" type="email" placeholder="Email address" autocomplete="email" onkeydown="if(event.key==='Enter')handleAuthSubmit()">
+      <input class="auth-input" id="auth-password" type="password" placeholder="Password" autocomplete="current-password" onkeydown="if(event.key==='Enter')handleAuthSubmit()">
+      <div id="auth-error" style="display:none"></div>
+      <button class="auth-btn" id="auth-submit-btn" onclick="handleAuthSubmit()">SIGN IN</button>
+      <div class="auth-toggle-row">
+        <span id="auth-toggle-text">Don't have an account?</span>
+        <button class="auth-toggle-link" id="auth-toggle-btn" data-mode="signin" onclick="toggleAuthMode()">Sign up</button>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="auth-divider"><span>or</span></div>
+
+    <!-- Google -->
+    <button class="auth-google-btn" onclick="signInWithGoogle()">
+      <svg width="18" height="18" viewBox="0 0 48 48" style="flex-shrink:0"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/><path fill="none" d="M0 0h48v48H0z"/></svg>
+      Continue with Google
+    </button>
+  </div>
+</div>
+
+<!-- ─── APP ─── -->
+<div id="app">
+
+  <!-- TOP BAR -->
+  <div id="topbar">
+    <div class="topbar-title">907TRADERS</div>
+  </div>
+
+  <!-- BODY -->
+  <div id="app-body">
+
+    <!-- ═══ PAGE: LOG ═══ -->
+    <div class="page" id="page-log">
+
+      <!-- Left Sidebar -->
+      <div id="sidebar-left">
+        <div>
+          <div class="section-title">Members</div>
+          <div id="member-list"></div>
+        </div>
+        <div>
+          <div class="section-title">Group Charts</div>
+          <div style="color:var(--text-secondary);font-size:11px;font-family:'DM Mono',monospace">Coming soon</div>
+        </div>
+      </div>
+
+      <!-- Main Content -->
+      <div id="main-content">
+        <div class="feed-header">
+          <div>
+            <div class="feed-title">GROUP LOG</div>
+            <div class="feed-date" id="feed-date"></div>
+          </div>
+          <button class="log-trade-btn" onclick="openLogTrade()">+ LOG TRADE</button>
+        </div>
+        <div class="filter-bar">
+          <button class="chip active" onclick="setFilter('ALL');document.querySelectorAll('.filter-bar .chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">ALL</button>
+          <button class="chip" onclick="setFilter('WIN');document.querySelectorAll('.filter-bar .chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">WIN</button>
+          <button class="chip" onclick="setFilter('LOSS');document.querySelectorAll('.filter-bar .chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">LOSS</button>
+          <select class="pair-select" onchange="setPairFilter(this.value)">
+            <option value="ALL">All Pairs</option>
+            <option>ES</option><option>NQ</option><option>MES</option><option>MNQ</option>
+            <option>Forex</option><option>Gold</option><option>Oil</option><option>BTC</option>
+          </select>
+          <button class="chip" id="retake-toggle" onclick="toggleRetakeFilter()">Would Retake</button>
+        </div>
+        <div id="trade-feed"></div>
+      </div>
+
+      <!-- Right Sidebar -->
+      <div id="sidebar-right">
+        <div>
+          <div class="section-title">Group Stats</div>
+          <div class="stat-grid-compact">
+            <div class="stat-compact"><div class="stat-compact-label">Win Rate</div><div class="stat-compact-val" id="stat-winrate">—</div></div>
+            <div class="stat-compact"><div class="stat-compact-label">Trades</div><div class="stat-compact-val" id="stat-trades">—</div></div>
+            <div class="stat-compact"><div class="stat-compact-label">Avg R:R</div><div class="stat-compact-val" id="stat-rr">—</div></div>
+            <div class="stat-compact"><div class="stat-compact-label">Avg P&L</div><div class="stat-compact-val" id="stat-pnl">—</div></div>
+            <div class="stat-compact"><div class="stat-compact-label">Top Pair</div><div class="stat-compact-val" id="stat-pair">—</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="section-title">Group Records</div>
+          <div class="record-card">
+            <div class="record-label">Best Trade</div>
+            <div class="record-val" id="record-best-val" style="color:var(--profit)">—</div>
+            <div class="record-meta"><span id="record-best-name">—</span> · <span id="record-best-pair">—</span></div>
+          </div>
+          <div class="record-card">
+            <div class="record-label">Worst Trade</div>
+            <div class="record-val" id="record-worst-val" style="color:var(--loss)">—</div>
+            <div class="record-meta"><span id="record-worst-name">—</span> · <span id="record-worst-pair">—</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ═══ PAGE: WAR ROOM ═══ -->
+    <div class="page" id="page-warroom">
+      <div class="warroom-header">
+        <div class="warroom-title">WAR ROOM</div>
+        <div id="warroom-count"></div>
+      </div>
+      <div id="chat-messages"></div>
+      <div id="chat-input-row">
+        <div class="chat-input-inner">
+          <input id="chat-input" type="text" placeholder="Say something..." onkeydown="if(event.key==='Enter')sendMessage()">
+          <button class="send-btn" onclick="sendMessage()">SEND</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ PAGE: MY STATS ═══ -->
+    <div class="page" id="page-stats">
+      <div class="stats-header">
+        <div>
+          <div class="stats-title">MY STATS</div>
+          <div style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-secondary)">Your trades only.</div>
+        </div>
+      </div>
+      <div id="stats-content"></div>
+    </div>
+
+  </div><!-- end app-body -->
+
+  <!-- BOTTOM NAV -->
+  <div id="bottomnav">
+    <button id="user-avatar-btn" onclick="openSettings()"></button>
+    <div class="nav-tabs">
+      <button class="tab-btn active" data-page="log" onclick="navigateTo('log')">
+        <span class="tab-icon">📋</span>LOG
+      </button>
+      <button class="tab-btn" data-page="warroom" onclick="navigateTo('warroom')">
+        <span class="tab-icon">⚔️</span>WAR ROOM
+      </button>
+      <button class="tab-btn" data-page="stats" onclick="navigateTo('stats')">
+        <span class="tab-icon">📊</span>MY STATS
+      </button>
+    </div>
+  </div>
+
+</div><!-- end app -->
+
+<!-- ═══ MODALS ═══ -->
+
+<!-- Log Trade Modal -->
+<div class="modal-overlay" id="modal-log-trade">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title-text" id="modal-title">LOG TRADE</div>
+      <button class="modal-close" onclick="closeModal('modal-log-trade')">✕</button>
+    </div>
+    <form id="log-trade-form" onsubmit="e=>e.preventDefault()">
+
+      <div class="form-group">
+        <label class="form-label">Screenshots</label>
+        <div class="upload-zone" onclick="document.getElementById('ss-upload').click()" ondragover="event.preventDefault()" ondrop="event.preventDefault();handleScreenshots(event.dataTransfer.files)">
+          <div class="upload-label">Drag & drop charts or tap to upload</div>
+        </div>
+        <input type="file" id="ss-upload" multiple accept="image/*" style="display:none" onchange="handleScreenshots(this.files)">
+        <div id="screenshot-preview"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Pair</label>
+        <div class="pair-chips">
+          <div class="pair-chip" data-pair="ES" onclick="document.querySelectorAll('.pair-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">ES</div>
+          <div class="pair-chip" data-pair="NQ" onclick="document.querySelectorAll('.pair-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">NQ</div>
+          <div class="pair-chip" data-pair="MES" onclick="document.querySelectorAll('.pair-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">MES</div>
+          <div class="pair-chip" data-pair="MNQ" onclick="document.querySelectorAll('.pair-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">MNQ</div>
+          <div class="pair-chip" data-pair="Forex" onclick="document.querySelectorAll('.pair-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">Forex</div>
+          <div class="pair-chip" data-pair="Gold" onclick="document.querySelectorAll('.pair-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">Gold</div>
+          <div class="pair-chip" data-pair="Oil" onclick="document.querySelectorAll('.pair-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">Oil</div>
+          <div class="pair-chip" data-pair="BTC" onclick="document.querySelectorAll('.pair-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">BTC</div>
+          <div class="pair-chip" data-pair="Custom" onclick="document.querySelectorAll('.pair-chip').forEach(c=>c.classList.remove('active'));this.classList.add('active')">Custom</div>
+        </div>
+      </div>
+
+      <div class="form-row form-group">
+        <div><label class="form-label">P&L ($)</label><input class="form-input" name="pnl" type="number" step="0.01" placeholder="0.00"></div>
+        <div><label class="form-label">R:R</label><input class="form-input" name="rr" type="number" step="0.1" placeholder="0.0"></div>
+      </div>
+
+      <div class="form-row form-group">
+        <div><label class="form-label">Entry</label><input class="form-input" name="entry" placeholder="Price"></div>
+        <div><label class="form-label">Exit</label><input class="form-input" name="exit" placeholder="Price"></div>
+      </div>
+      <div class="form-row form-group">
+        <div><label class="form-label">Stop</label><input class="form-input" name="stop" placeholder="Price"></div>
+        <div><label class="form-label">Target</label><input class="form-input" name="target" placeholder="Price"></div>
+      </div>
+
+      <div class="form-row-3 form-group">
+        <div><label class="form-label">Date</label><input class="form-input" name="tradeDate" type="date"></div>
+        <div><label class="form-label">Entry Time</label><input class="form-input" name="entryTime" type="time"></div>
+        <div><label class="form-label">Exit Time</label><input class="form-input" name="exitTime" type="time"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Confidence Rate (%)</label>
+        <input class="form-input" name="confidence" type="number" min="0" max="100" placeholder="75">
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Confluences</label>
+        <div class="conf-group">
+          <div class="conf-group-label">Reversal</div>
+          <div class="conf-chips">
+            <div class="conf-chip" data-id="r1" data-label="FVG" data-type="reversal" onclick="this.classList.toggle('active')">FVG</div>
+            <div class="conf-chip" data-id="r2" data-label="OB" data-type="reversal" onclick="this.classList.toggle('active')">OB</div>
+            <div class="conf-chip" data-id="r3" data-label="SSL" data-type="reversal" onclick="this.classList.toggle('active')">SSL</div>
+            <div class="conf-chip" data-id="r4" data-label="BSL" data-type="reversal" onclick="this.classList.toggle('active')">BSL</div>
+            <div class="conf-chip" data-id="r5" data-label="CHoCH" data-type="reversal" onclick="this.classList.toggle('active')">CHoCH</div>
+          </div>
+        </div>
+        <div class="conf-group">
+          <div class="conf-group-label">Confirmation</div>
+          <div class="conf-chips">
+            <div class="conf-chip" data-id="c1" data-label="BOS" data-type="confirmation" onclick="this.classList.toggle('active')">BOS</div>
+            <div class="conf-chip" data-id="c2" data-label="MSS" data-type="confirmation" onclick="this.classList.toggle('active')">MSS</div>
+            <div class="conf-chip" data-id="c3" data-label="Sweep" data-type="confirmation" onclick="this.classList.toggle('active')">Sweep</div>
+            <div class="conf-chip" data-id="c4" data-label="PD Array" data-type="confirmation" onclick="this.classList.toggle('active')">PD Array</div>
+          </div>
+        </div>
+        <div class="conf-group">
+          <div class="conf-group-label">Continuation</div>
+          <div class="conf-chips">
+            <div class="conf-chip" data-id="k1" data-label="Trend" data-type="continuation" onclick="this.classList.toggle('active')">Trend</div>
+            <div class="conf-chip" data-id="k2" data-label="IFVG" data-type="continuation" onclick="this.classList.toggle('active')">IFVG</div>
+            <div class="conf-chip" data-id="k3" data-label="EQ" data-type="continuation" onclick="this.classList.toggle('active')">EQ</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Notes / Reason / Bias</label>
+        <textarea class="form-input" name="notes" rows="3" placeholder="What was the setup? Why did you take it?"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Result</label>
+        <div class="result-btns">
+          <button type="button" class="result-btn" id="result-win" data-result="WIN" onclick="document.querySelectorAll('.result-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">WIN</button>
+          <button type="button" class="result-btn" id="result-loss" data-result="LOSS" onclick="document.querySelectorAll('.result-btn').forEach(b=>b.classList.remove('active'));this.classList.add('active')">LOSS</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Would Take Again?</label>
+        <div class="toggle-btns">
+          <button type="button" class="toggle-btn" id="retake-yes" onclick="document.getElementById('retake-yes').classList.toggle('active');document.getElementById('retake-no').classList.remove('active')">YES</button>
+          <button type="button" class="toggle-btn" id="retake-no" onclick="document.getElementById('retake-no').classList.toggle('active');document.getElementById('retake-yes').classList.remove('active')">NO</button>
+        </div>
+      </div>
+
+      <button type="button" class="submit-btn" id="submit-trade-btn" onclick="submitTrade()">POST TO GROUP LOG</button>
+    </form>
+  </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal-overlay" id="modal-settings">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title-text">SETTINGS</div>
+      <button class="modal-close" onclick="closeModal('modal-settings')">✕</button>
+    </div>
+    <div class="settings-tabs">
+      <button class="settings-tab-btn active" data-tab="profile" onclick="switchSettingsTab('profile')">Profile</button>
+      <button class="settings-tab-btn" data-tab="theme" onclick="switchSettingsTab('theme')">Theme</button>
+      <button class="settings-tab-btn" id="settings-tab-admin" data-tab="admin" onclick="switchSettingsTab('admin')" style="display:none">Admin</button>
+    </div>
+
+    <!-- Profile Tab -->
+    <div id="settings-panel-profile" class="settings-tab-panel">
+      <div class="form-group">
+        <label class="form-label">Username</label>
+        <input class="form-input" id="settings-username" placeholder="Enter display name">
+      </div>
+      <button class="submit-btn" onclick="saveProfile()">SAVE PROFILE</button>
+      <button class="submit-btn" style="background:rgba(255,255,255,0.08);color:var(--text-primary);margin-top:8px" onclick="handleSignOut()">SIGN OUT</button>
+    </div>
+
+    <!-- Theme Tab -->
+    <div id="settings-panel-theme" class="settings-tab-panel" style="display:none">
+      <div class="preset-chips">
+        <div class="preset-chip" onclick="applyPreset('default')">Default</div>
+        <div class="preset-chip" onclick="applyPreset('midnight')">Midnight</div>
+        <div class="preset-chip" onclick="applyPreset('forest')">Forest</div>
+        <div class="preset-chip" onclick="applyPreset('crimson')">Crimson</div>
+        <div class="preset-chip" onclick="applyPreset('sand')">Sand</div>
+        <div class="preset-chip" onclick="applyPreset('forest-camo')">Forest Camo</div>
+      </div>
+      <div class="theme-section">
+        <div class="theme-section-title">Background</div>
+        <div class="theme-row"><span class="theme-row-label">Background</span><input type="color" id="theme-bg" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Top Bar</span><input type="color" id="theme-topbar" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Bottom Bar</span><input type="color" id="theme-bottombar" class="theme-color-input"></div>
+      </div>
+      <div class="theme-section">
+        <div class="theme-section-title">Text</div>
+        <div class="theme-row"><span class="theme-row-label">Logo Text</span><input type="color" id="theme-logoText" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Primary Text</span><input type="color" id="theme-textPrimary" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Secondary Text</span><input type="color" id="theme-textSecondary" class="theme-color-input"></div>
+      </div>
+      <div class="theme-section">
+        <div class="theme-section-title">Cards</div>
+        <div class="theme-row"><span class="theme-row-label">Card Background</span><input type="color" id="theme-cardBg" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Card Border</span><input type="color" id="theme-cardBorder" class="theme-color-input"></div>
+      </div>
+      <div class="theme-section">
+        <div class="theme-section-title">Profit & Loss</div>
+        <div class="theme-row"><span class="theme-row-label">Profit Color</span><input type="color" id="theme-profit" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Loss Color</span><input type="color" id="theme-loss" class="theme-color-input"></div>
+      </div>
+      <div class="theme-section">
+        <div class="theme-section-title">Confluences</div>
+        <div class="theme-row"><span class="theme-row-label">Reversal</span><input type="color" id="theme-confluenceReversal" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Confirmation</span><input type="color" id="theme-confluenceConfirmation" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Continuation</span><input type="color" id="theme-confluenceContinuation" class="theme-color-input"></div>
+      </div>
+      <div class="theme-section">
+        <div class="theme-section-title">Buttons & Chips</div>
+        <div class="theme-row"><span class="theme-row-label">Active Chip Background</span><input type="color" id="theme-chipActiveBg" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Active Chip Text</span><input type="color" id="theme-chipActiveText" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Button Highlight</span><input type="color" id="theme-buttonHighlight" class="theme-color-input"></div>
+        <div class="theme-row"><span class="theme-row-label">Stat Accent</span><input type="color" id="theme-statAccent" class="theme-color-input"></div>
+      </div>
+      <button class="submit-btn" onclick="saveTheme()">SAVE THEME</button>
+    </div>
+
+    <!-- Admin Tab -->
+    <div id="settings-panel-admin" class="settings-tab-panel" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Change Group Password</label>
+        <input class="form-input" id="new-group-password" type="password" placeholder="New password (min 4 chars)">
+        <button class="submit-btn" style="margin-top:10px" onclick="changeGroupPassword()">UPDATE PASSWORD</button>
+        <div style="margin-top:8px;font-family:'DM Mono',monospace;font-size:10px;color:var(--text-secondary);line-height:1.6">
+          All active users will see a re-entry prompt on their next interaction. They cannot dismiss it without entering the new password.
+        </div>
+      </div>
+      <div class="form-group" style="margin-top:20px">
+        <div class="section-title">All Members</div>
+        <div id="admin-users-list"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Trade Popup Modal -->
+<div class="modal-overlay" id="modal-trade-popup">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title-text">TRADE DETAIL</div>
+      <button class="modal-close" onclick="closeModal('modal-trade-popup')">✕</button>
+    </div>
+    <div id="trade-popup-content"></div>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div class="modal-overlay" id="modal-lightbox" onclick="closeModal('modal-lightbox')">
+  <div class="modal-box" onclick="event.stopPropagation()">
+    <button class="lightbox-nav prev" onclick="lightboxPrev()">‹</button>
+    <img id="lightbox-img" src="" alt="Chart">
+    <button class="lightbox-nav next" onclick="lightboxNext()">›</button>
+  </div>
+</div>
+
+<!-- Add Account Modal -->
+<div class="modal-overlay" id="modal-add-account">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title-text">ADD ACCOUNT</div>
+      <button class="modal-close" onclick="closeModal('modal-add-account')">✕</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Account Name</label>
+      <input class="form-input" id="acct-name" placeholder="e.g. Apex Trader $50k">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Max Drawdown ($)</label>
+      <input class="form-input" id="acct-dd" type="number" placeholder="2500">
+    </div>
+    <button class="submit-btn" onclick="saveAccount()">ADD ACCOUNT</button>
+  </div>
+</div>
+
+<script>
+// Set today's date in feed header
+document.getElementById('feed-date').textContent = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+</script>
+</body>
+</html>
