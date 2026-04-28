@@ -1,0 +1,430 @@
+/* ═══════════════════════════════════════════════════
+   907TRADERS — PREMIUM VISUAL LAYER
+   ═══════════════════════════════════════════════════ */
+
+/* ── Display font ──────────────────────────────────── */
+:root {
+  --font-display: 'Bebas Neue', sans-serif;
+}
+
+/* ── Grain overlay ─────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9998;
+  pointer-events: none;
+  opacity: 0.028;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+  background-size: 180px 180px;
+  mix-blend-mode: overlay;
+}
+
+/* ── Scanline vignette ─────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9997;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 55%,
+    rgba(0, 0, 0, 0.45) 100%
+  );
+}
+
+/* ── Premium card ──────────────────────────────────── */
+.card-premium {
+  position: relative;
+  background: var(--card-bg);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  isolation: isolate;
+  overflow: hidden;
+}
+.card-premium::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    rgba(0, 229, 255, 0.35) 0%,
+    transparent 40%,
+    transparent 60%,
+    rgba(0, 229, 255, 0.15) 100%
+  );
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+.card-premium::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 20% 20%,
+    rgba(0, 229, 255, 0.04) 0%,
+    transparent 60%
+  );
+  pointer-events: none;
+}
+
+/* ── Glow card (on hover) ──────────────────────────── */
+.card-glow {
+  transition: box-shadow 0.3s ease, transform 0.25s ease;
+}
+.card-glow:hover {
+  box-shadow: 0 0 28px rgba(0, 229, 255, 0.12), 0 8px 32px rgba(0, 0, 0, 0.5);
+  transform: translateY(-2px);
+}
+
+/* ── Gradient border (static) ──────────────────────── */
+.gradient-border {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--bg-secondary), var(--bg-secondary)) padding-box,
+    linear-gradient(135deg, rgba(0,229,255,0.4), transparent 50%, rgba(0,229,255,0.2)) border-box;
+}
+
+/* ── Animated gradient border ──────────────────────── */
+@property --angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.border-spin {
+  position: relative;
+  border-radius: var(--radius);
+  z-index: 0;
+}
+.border-spin::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: conic-gradient(from var(--angle), transparent 70%, var(--accent), transparent 80%);
+  animation: spin-border 4s linear infinite;
+  z-index: -1;
+}
+.border-spin::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: calc(var(--radius) - 1px);
+  background: var(--bg-secondary);
+  z-index: -1;
+}
+@keyframes spin-border {
+  to { --angle: 360deg; }
+}
+
+/* ── Glow text ─────────────────────────────────────── */
+.text-glow {
+  text-shadow:
+    0 0 20px rgba(0, 229, 255, 0.6),
+    0 0 60px rgba(0, 229, 255, 0.25),
+    0 0 100px rgba(0, 229, 255, 0.12);
+}
+
+/* ── Gradient text ─────────────────────────────────── */
+.text-gradient {
+  background: linear-gradient(135deg, #ffffff 0%, var(--accent) 60%, #ffffff 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-size: 200% 100%;
+  animation: shimmer 4s ease infinite;
+}
+@keyframes shimmer {
+  0%   { background-position: 100% 0; }
+  50%  { background-position: 0% 0; }
+  100% { background-position: 100% 0; }
+}
+
+/* ── Accent line ───────────────────────────────────── */
+.accent-line {
+  width: 48px;
+  height: 3px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  border-radius: 2px;
+  margin-bottom: 20px;
+}
+
+/* ── Section badge ─────────────────────────────────── */
+.section-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 14px;
+  border-radius: 99px;
+  background: var(--accent-dim);
+  border: 1px solid rgba(0, 229, 255, 0.25);
+  font-family: 'Space Mono', monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 20px;
+}
+.section-badge::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent);
+  animation: pulse-dot 2s ease infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.5; transform: scale(0.7); }
+}
+
+/* ── Display heading ───────────────────────────────── */
+.display-heading {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  line-height: 0.95;
+  text-transform: uppercase;
+}
+
+/* ── Stat highlight card ───────────────────────────── */
+.stat-highlight {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 18px 20px;
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.stat-highlight::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), transparent);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.stat-highlight:hover {
+  border-color: rgba(0, 229, 255, 0.2);
+  box-shadow: 0 4px 24px rgba(0, 229, 255, 0.08);
+}
+
+/* ── Glitch animation ──────────────────────────────── */
+@keyframes glitch-1 {
+  0%   { clip-path: inset(40% 0 61% 0); transform: translate(-2px, 0); }
+  20%  { clip-path: inset(92% 0 1% 0);  transform: translate(1px, 0); }
+  40%  { clip-path: inset(43% 0 1% 0);  transform: translate(-1px, 0); }
+  60%  { clip-path: inset(25% 0 58% 0); transform: translate(2px, 0); }
+  80%  { clip-path: inset(54% 0 7% 0);  transform: translate(-2px, 0); }
+  100% { clip-path: inset(58% 0 43% 0); transform: translate(0); }
+}
+@keyframes glitch-2 {
+  0%   { clip-path: inset(24% 0 29% 0); transform: translate(2px, 0); }
+  20%  { clip-path: inset(54% 0 3% 0);  transform: translate(-2px, 0); }
+  40%  { clip-path: inset(11% 0 53% 0); transform: translate(1px, 0); }
+  60%  { clip-path: inset(71% 0 4% 0);  transform: translate(-1px, 0); }
+  80%  { clip-path: inset(3% 0 46% 0);  transform: translate(2px, 0); }
+  100% { clip-path: inset(42% 0 34% 0); transform: translate(0); }
+}
+
+.glitch-wrap {
+  position: relative;
+  display: inline-block;
+}
+.glitch-wrap::before,
+.glitch-wrap::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  font: inherit;
+  color: inherit;
+}
+.glitch-wrap::before {
+  color: #ff0080;
+  opacity: 0;
+  animation: glitch-1 4s steps(1) infinite;
+}
+.glitch-wrap::after {
+  color: var(--accent);
+  opacity: 0;
+  animation: glitch-2 4s steps(1) infinite 0.5s;
+}
+.glitch-wrap:hover::before,
+.glitch-wrap:hover::after {
+  opacity: 0.7;
+  animation-duration: 0.3s;
+}
+
+/* ── Hover 3D tilt ─────────────────────────────────── */
+.tilt {
+  transition: transform 0.2s ease;
+  transform-style: preserve-3d;
+}
+.tilt:hover {
+  transform: perspective(600px) rotateX(2deg) rotateY(-2deg) scale(1.01);
+}
+
+/* ── Shimmer loading skeleton ──────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 25%,
+    rgba(255,255,255,0.06) 50%,
+    var(--bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.6s ease infinite;
+  border-radius: var(--radius);
+}
+@keyframes skeleton-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Pulsing glow ring ─────────────────────────────── */
+.glow-ring {
+  box-shadow:
+    0 0 0 1px rgba(0, 229, 255, 0.2),
+    0 0 0 4px rgba(0, 229, 255, 0.06),
+    0 0 20px rgba(0, 229, 255, 0.1);
+  animation: glow-pulse 3s ease infinite;
+}
+@keyframes glow-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(0,229,255,0.2), 0 0 0 4px rgba(0,229,255,0.06), 0 0 20px rgba(0,229,255,0.10); }
+  50%       { box-shadow: 0 0 0 1px rgba(0,229,255,0.4), 0 0 0 8px rgba(0,229,255,0.10), 0 0 40px rgba(0,229,255,0.18); }
+}
+
+/* ── Neon button ───────────────────────────────────── */
+.btn-neon {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(0,229,255,0.6);
+  box-shadow: 0 0 12px rgba(0,229,255,0.15), inset 0 0 12px rgba(0,229,255,0.05);
+  transition: all 0.2s ease;
+}
+.btn-neon:hover {
+  background: rgba(0,229,255,0.1);
+  box-shadow: 0 0 24px rgba(0,229,255,0.3), inset 0 0 24px rgba(0,229,255,0.08);
+  transform: translateY(-1px);
+}
+
+/* ── Horizontal rule with glow ─────────────────────── */
+.hr-glow {
+  border: none;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0,229,255,0.3) 20%,
+    rgba(0,229,255,0.3) 80%,
+    transparent
+  );
+  margin: 48px 0;
+}
+
+/* ── Floating label ────────────────────────────────── */
+.float-label {
+  position: absolute;
+  top: -10px;
+  left: 16px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--bg-secondary);
+  padding: 0 6px;
+}
+
+/* ── Number counter ────────────────────────────────── */
+.counter-num {
+  font-family: 'Space Mono', monospace;
+  font-size: clamp(2rem, 5vw, 3.2rem);
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+  text-shadow: 0 0 30px rgba(0,229,255,0.3);
+}
+
+/* ── Ticker tape ───────────────────────────────────── */
+.ticker-wrap {
+  overflow: hidden;
+  border-top: 1px solid var(--card-border);
+  border-bottom: 1px solid var(--card-border);
+  padding: 10px 0;
+  background: var(--bg-secondary);
+}
+.ticker-track {
+  display: flex;
+  gap: 60px;
+  white-space: nowrap;
+  animation: ticker 30s linear infinite;
+  width: max-content;
+}
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.ticker-item {
+  font-family: 'Space Mono', monospace;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ticker-item .up   { color: var(--profit); }
+.ticker-item .down { color: var(--loss); }
+
+/* ── Backdrop panel ────────────────────────────────── */
+.panel-glass {
+  background: rgba(10, 10, 10, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--card-border);
+}
+
+/* ── Custom scrollbar (premium thin) ──────────────── */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 229, 255, 0.2);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover { background: rgba(0, 229, 255, 0.4); }
+
+/* ── Page transition fade ──────────────────────────── */
+.page-fade-in {
+  animation: pageFade 0.4s ease forwards;
+}
+@keyframes pageFade {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Trading-specific accent overrides ─────────────── */
+[data-theme='forest'] .text-gradient {
+  background-image: linear-gradient(135deg, #e8f5e9 0%, #69f0ae 60%, #e8f5e9 100%);
+}
+[data-theme='midnight'] .text-gradient {
+  background-image: linear-gradient(135deg, #e8e8ff 0%, #7c4dff 60%, #e8e8ff 100%);
+}
+[data-theme='crimson'] .text-gradient {
+  background-image: linear-gradient(135deg, #fff8f8 0%, #e53935 60%, #fff8f8 100%);
+}
