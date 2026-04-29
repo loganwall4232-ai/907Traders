@@ -13,6 +13,7 @@ import Log from './pages/Log'
 import WarRoom from './pages/WarRoom'
 import MyStats from './pages/MyStats'
 import Admin from './pages/Admin'
+import News from './pages/News'
 import './styles/index.css'
 import './styles/premium.css'
 
@@ -51,6 +52,7 @@ function AppShell() {
           <Route path="/log"       element={<Log />} />
           <Route path="/warroom"   element={<WarRoom />} />
           <Route path="/stats"     element={<MyStats />} />
+          <Route path="/news"      element={<News />} />
           <Route path="/admin"     element={<Admin />} />
           <Route path="*"          element={<Navigate to="/strategy" replace />} />
         </Routes>

@@ -6,6 +6,7 @@ const NAV = [
   { to: '/log',       label: 'LOG' },
   { to: '/warroom',   label: 'WAR ROOM' },
   { to: '/stats',     label: 'MY STATS' },
+  { to: '/news',      label: 'NEWS' },
 ]
 
 export default function NavBar() {
