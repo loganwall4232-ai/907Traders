@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react'
 import { X, Upload, Trash2 } from 'lucide-react'
 import {
-  collection, addDoc, updateDoc, doc, serverTimestamp,
+  collection, addDoc, updateDoc, doc, serverTimestamp, increment,
 } from 'firebase/firestore'
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 import { db, storage } from '../../firebase'
@@ -132,10 +132,29 @@ export default function LogTradeModal({ onClose, propAccounts = [], editTrade = 
         screenshots: [...existingUrls, ...newUrls],
       }
 
+      const pnlDelta = parseFloat(form.pnl) || 0
+
       if (editTrade) {
+        // On edit: reverse the old P&L, apply the new one to each account
+        const oldPnl = editTrade.pnl || 0
+        const oldAccounts = editTrade.accountIds || []
         await updateDoc(doc(db, 'trades', editTrade.id), data)
+        // Remove old delta from accounts that are no longer selected
+        for (const accId of oldAccounts) {
+          if (!form.accountIds.includes(accId)) {
+            await updateDoc(doc(db, 'propAccounts', accId), { currentBalance: increment(-oldPnl) })
+          }
+        }
+        // Apply new delta to newly selected or kept accounts
+        for (const accId of form.accountIds) {
+          const delta = oldAccounts.includes(accId) ? pnlDelta - oldPnl : pnlDelta
+          if (delta !== 0) await updateDoc(doc(db, 'propAccounts', accId), { currentBalance: increment(delta) })
+        }
       } else {
         await addDoc(collection(db, 'trades'), { ...data, createdAt: serverTimestamp() })
+        for (const accId of form.accountIds) {
+          await updateDoc(doc(db, 'propAccounts', accId), { currentBalance: increment(pnlDelta) })
+        }
       }
       onClose()
     } catch (err) {

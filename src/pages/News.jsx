@@ -179,39 +179,6 @@ function CalendarPanel({ events, day, loading }) {
   )
 }
 
-function AlertCard({ item }) {
-  const ts = item.timestamp?.toDate?.() || (item.timestamp ? new Date(item.timestamp) : null)
-  const timeStr = ts ? ts.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''
-  const dateStr = ts ? ts.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''
-
-  return (
-    <div className="feed-card feed-card-alert card">
-      <div className="feed-card-header">
-        <span className="feed-badge feed-badge-alert">INDICATOR ALERT</span>
-        <span className="feed-time mono">{dateStr} {timeStr}</span>
-      </div>
-      <div className="feed-card-body">
-        <div className="alert-symbol">
-          <span className="alert-pair">{item.symbol || '—'}</span>
-          {item.direction && (
-            <span className="alert-dir" style={{ color: item.direction === 'LONG' ? 'var(--profit)' : 'var(--loss)' }}>
-              {item.direction}
-            </span>
-          )}
-        </div>
-        {item.confluences && item.confluences.length > 0 && (
-          <div className="alert-confluences">
-            {item.confluences.map((c, i) => (
-              <span key={i} className="confluence-chip">{c}</span>
-            ))}
-          </div>
-        )}
-        {item.message && <p className="feed-card-text">{item.message}</p>}
-      </div>
-    </div>
-  )
-}
-
 function NewsCard({ item }) {
   const ts = item.publishedAt?.toDate?.() || (item.publishedAt ? new Date(item.publishedAt) : null)
   const timeStr = ts ? ts.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : ''
@@ -240,34 +207,10 @@ function LiveFeed() {
   const [items, setItems] = useState([])
 
   useEffect(() => {
-    const alertsQ = query(collection(db, 'alerts'),   orderBy('timestamp', 'desc'), limit(50))
-    const newsQ   = query(collection(db, 'newsItems'), orderBy('publishedAt', 'desc'), limit(50))
-
-    const unsubs = [
-      onSnapshot(alertsQ, (snap) => {
-        const alerts = snap.docs.map((d) => ({ id: d.id, _type: 'alert',   sortKey: d.data().timestamp,   ...d.data() }))
-        setItems((prev) => {
-          const news = prev.filter((x) => x._type === 'news')
-          return [...alerts, ...news].sort((a, b) => {
-            const ta = a.sortKey?.seconds || 0
-            const tb = b.sortKey?.seconds || 0
-            return tb - ta
-          })
-        })
-      }),
-      onSnapshot(newsQ, (snap) => {
-        const news = snap.docs.map((d) => ({ id: d.id, _type: 'news', sortKey: d.data().publishedAt, ...d.data() }))
-        setItems((prev) => {
-          const alerts = prev.filter((x) => x._type === 'alert')
-          return [...alerts, ...news].sort((a, b) => {
-            const ta = a.sortKey?.seconds || 0
-            const tb = b.sortKey?.seconds || 0
-            return tb - ta
-          })
-        })
-      }),
-    ]
-    return () => unsubs.forEach((u) => u())
+    const newsQ = query(collection(db, 'newsItems'), orderBy('publishedAt', 'desc'), limit(60))
+    return onSnapshot(newsQ, (snap) => {
+      setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() })))
+    })
   }, [])
 
   return (
@@ -278,15 +221,13 @@ function LiveFeed() {
       </div>
       {items.length === 0 && (
         <p className="muted" style={{ fontSize: '0.83rem', padding: '12px 0' }}>
-          Alerts and news will appear here in real time.
+          ForexFactory news will appear here as it's scraped.
         </p>
       )}
       <div className="feed-list">
-        {items.map((item) =>
-          item._type === 'alert'
-            ? <AlertCard key={item.id} item={item} />
-            : <NewsCard  key={item.id} item={item} />
-        )}
+        {items.map((item) => (
+          <NewsCard key={item.id} item={item} />
+        ))}
       </div>
     </div>
   )
@@ -324,7 +265,7 @@ export default function News() {
     <div className="news-page">
       <div className="news-page-header">
         <h2 className="news-page-title">NEWS</h2>
-        <p className="muted" style={{ fontSize: '0.82rem' }}>USD economic calendar · live indicator alerts · ForexFactory feed</p>
+        <p className="muted" style={{ fontSize: '0.82rem' }}>USD economic calendar · ForexFactory news feed</p>
       </div>
 
       <WeekStrip week={week} selected={selected} onSelect={setSelected} />
@@ -526,11 +467,6 @@ export default function News() {
           padding: 2px 7px;
           border-radius: 4px;
         }
-        .feed-badge-alert {
-          background: var(--accent-dim);
-          color: var(--accent);
-          border: 1px solid rgba(0,229,255,0.3);
-        }
         .feed-badge-news {
           background: rgba(255,255,255,0.06);
           color: var(--text-secondary);
@@ -539,21 +475,6 @@ export default function News() {
         .feed-time { font-size: 0.7rem; color: var(--text-muted); margin-left: auto; }
         .feed-card-body { display: flex; flex-direction: column; gap: 6px; }
         .feed-card-text { font-size: 0.83rem; color: var(--text-secondary); margin: 0; }
-
-        /* Alert card */
-        .alert-symbol { display: flex; align-items: center; gap: 10px; }
-        .alert-pair { font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem; letter-spacing: 0.05em; }
-        .alert-dir { font-size: 0.78rem; font-weight: 700; letter-spacing: 0.08em; }
-        .alert-confluences { display: flex; gap: 6px; flex-wrap: wrap; }
-        .confluence-chip {
-          font-size: 0.67rem;
-          font-weight: 600;
-          padding: 2px 8px;
-          border-radius: 4px;
-          background: rgba(255,255,255,0.06);
-          border: 1px solid var(--card-border);
-          color: var(--text-secondary);
-        }
 
         /* News card */
         .news-card-title { font-size: 0.9rem; font-weight: 600; color: var(--text-primary); }
